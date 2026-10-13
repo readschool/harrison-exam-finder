@@ -1,9 +1,13 @@
 name: Update index and deploy
 
+# Mondays: scrape every board (in parallel, one job per board), merge,
+# check links, save the index, deploy. Every other night: check links and
+# deploy. Pushing changes to the site or code redeploys without scraping.
+
 on:
   schedule:
-    - cron: "17 3 * * 1"   # Mondays 03:17 UTC: scrape the boards, check links, deploy
-    - cron: "41 2 * * *"   # every night 02:41 UTC: check links, deploy
+    - cron: "17 3 * * 1"   # Mondays 03:17 UTC: full update
+    - cron: "41 2 * * *"   # every night 02:41 UTC: link check
   push:
     branches: [main]
     paths: ["site/**", "hef/**", "config/**"]
@@ -28,57 +32,101 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  update:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    outputs:
+      scrape: ${{ steps.plan.outputs.scrape }}
+      check: ${{ steps.plan.outputs.check }}
+      boards: ${{ steps.plan.outputs.boards }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - run: pip install -r requirements.txt
-
-      - name: Decide what to run
-        id: plan
+      - id: plan
         run: |
+          scrape=false
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "scrape=${{ inputs.scrape }}" >> "$GITHUB_OUTPUT"
+            scrape="${{ inputs.scrape }}"
           elif [ "${{ github.event.schedule }}" = "17 3 * * 1" ]; then
-            echo "scrape=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "scrape=false" >> "$GITHUB_OUTPUT"
+            scrape=true
           fi
+          echo "scrape=$scrape" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "check=false" >> "$GITHUB_OUTPUT"
           else
             echo "check=true" >> "$GITHUB_OUTPUT"
           fi
+          board="${{ inputs.board }}"
+          if [ -n "$board" ]; then
+            echo "boards=[\"$board\"]" >> "$GITHUB_OUTPUT"
+          else
+            echo 'boards=["aqa","ocr","pearson"]' >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Install headless Chromium
-        if: steps.plan.outputs.scrape == 'true'
-        run: python -m playwright install --with-deps chromium
-
-      - name: Scrape exam boards
-        if: steps.plan.outputs.scrape == 'true'
-        # A board having a bad day shouldn't stop the link check or deploy;
+  scrape:
+    needs: plan
+    if: needs.plan.outputs.scrape == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        board: ${{ fromJSON(needs.plan.outputs.boards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Scrape ${{ matrix.board }}
+        # A board having a bad day shouldn't stop the others or the deploy;
         # the scrape report in the run summary shows what went wrong.
         continue-on-error: true
+        run: python -m hef scrape --board "${{ matrix.board }}" --out "partial/${{ matrix.board }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scrape-${{ matrix.board }}
+          path: partial/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  update:
+    needs: [plan, scrape]
+    # Run even if scraping was skipped or one board failed.
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.scrape == 'true'
+        with:
+          pattern: scrape-*
+          path: partial/
+          merge-multiple: true
+
+      - name: Merge scrape results
+        if: needs.plan.outputs.scrape == 'true'
         run: |
-          if [ -n "${{ inputs.board }}" ]; then
-            python -m hef scrape --board "${{ inputs.board }}"
+          if ls partial/*.json >/dev/null 2>&1; then
+            python -m hef merge partial/*.json
           else
-            python -m hef scrape
+            echo "No scrape results to merge."
           fi
 
       - name: Check links
-        if: steps.plan.outputs.check == 'true'
-        run: python -m hef check-links
+        if: needs.plan.outputs.check == 'true'
+        # New links are always checked; on top of that, the 5,000 links
+        # checked longest ago, so every link is rechecked every few nights.
+        run: python -m hef check-links --limit 5000
 
       - name: Save index changes
-        if: steps.plan.outputs.scrape == 'true' || steps.plan.outputs.check == 'true'
+        if: needs.plan.outputs.scrape == 'true' || needs.plan.outputs.check == 'true'
         run: |
           git config user.name "harrison-exam-finder-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -87,6 +135,7 @@ jobs:
             echo "No changes to the index."
           else
             git commit -m "Update paper index ($(date -u +%Y-%m-%d))"
+            git pull --rebase
             git push
           fi
 
@@ -100,6 +149,7 @@ jobs:
 
   deploy:
     needs: update
+    if: always() && needs.update.result == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
