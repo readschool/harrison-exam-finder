@@ -48,7 +48,7 @@ def test_ocr_static_page():
     assert any("1-nav.pdf" in n for n in names)  # harvested, but not a paper
     assert "1-nav.pdf" not in str(list(by_url))
     unclassified = [r for r in results if not r.doc and not r.skipped]
-    assert len(unclassified) == 2  # nav "Specification" + "Something unexpected"
+    assert len(unclassified) == 1  # "Something unexpected" ("Specification" is skipped)
 
 
 def test_ocr_alevel_and_as_split():

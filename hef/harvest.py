@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import urllib.robotparser
 from urllib.parse import urljoin, urlparse
@@ -71,6 +72,11 @@ def allowed_by_robots(url: str, agent: str, session: requests.Session) -> bool:
 
 # --- Context extraction (shared logic for static and browser modes) ----------
 
+SERIES_LABEL = re.compile(
+    r"^(20\d\d\s*[-–]?\s*(january|march|may|june|october|november)( exam)?( series)?"
+    r"|(january|march|may|june|october|november|summer|autumn)( exam)?( series)?\s*[-–]?\s*20\d\d( series)?)$",
+    re.I,
+)
 HEADING_TAGS = {"h1": 1, "h2": 2, "h3": 3, "h4": 4, "h5": 5, "h6": 6}
 LABEL_LEVEL = 7  # accordion summaries, tab labels and similar
 
@@ -96,11 +102,20 @@ def links_from_html(html: str, page_url: str) -> list[dict]:
     # kept separately. Context is ordered nearest-first by document position.
     stack: dict[int, tuple[int, str]] = {}
     label: tuple[int, str] | None = None
+    series_label: tuple[int, str] | None = None
     found: list[dict] = []
     seen: set[str] = set()
     for pos, el in enumerate(soup.body.descendants if soup.body else []):
         if not isinstance(el, Tag):
             continue
+        # Any small element that reads exactly like an exam series ("2025 - June
+        # series") counts as a series heading, whatever markup the board uses.
+        # (Accordion toggles are often <a href="#...">, so links count too, as
+        # long as they aren't PDFs; dropdown options don't, as they all sit together.)
+        if el.name not in ("option", "select") and not (el.name == "a" and is_pdf_url(urljoin(page_url, el.get("href") or ""))):
+            short = clean(el.get_text(" "))
+            if len(short) < 40 and SERIES_LABEL.match(short) and not el.find_parent("select"):
+                series_label = (pos, short)
         level = HEADING_TAGS.get(el.name)
         is_label = level is None and _is_label(el)
         if level is not None or is_label:
@@ -119,8 +134,8 @@ def links_from_html(html: str, page_url: str) -> list[dict]:
                 continue
             seen.add(url)
             text = clean(el.get_text(" ")) or clean(el.get("title")) or clean(el.get("aria-label"))
-            entries = list(stack.values()) + ([label] if label else [])
-            context = [t for _, t in sorted(entries, reverse=True)]
+            entries = list(stack.values()) + [e for e in (label, series_label) if e]
+            context = list(dict.fromkeys(t for _, t in sorted(entries, reverse=True)))
             found.append({"url": url, "text": text, "context": context, "extra": "", "source_page": page_url})
     return found
 
@@ -188,12 +203,18 @@ _JS_EXTRACT = r"""
     return ['accordion__title','accordion-title','accordion-heading','panel-title','series-title'].some(k => c.includes(k));
   };
   const clean = s => (s || '').replace(/\s+/g, ' ').trim();
-  const stack = {}; let label = null; const out = []; const seen = new Set();
+  const SERIES = /^(20\d\d\s*[-–]?\s*(january|march|may|june|october|november)( exam)?( series)?|(january|march|may|june|october|november|summer|autumn)( exam)?( series)?\s*[-–]?\s*20\d\d( series)?)$/i;
+  const isPdf = u => /\.pdf($|[?#])/i.test(u || '');
+  const stack = {}; let label = null; let seriesLabel = null; const out = []; const seen = new Set();
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
   let el; let pos = 0;
   while ((el = walker.nextNode())) {
     pos++;
     if (['SCRIPT','STYLE','NOSCRIPT','TEMPLATE'].includes(el.tagName)) continue;
+    if (!['OPTION','SELECT'].includes(el.tagName) && !(el.tagName === 'A' && isPdf(el.href)) && !el.closest('select')) {
+      const s = clean(el.textContent);
+      if (s.length < 40 && SERIES.test(s)) seriesLabel = [pos, s];
+    }
     const level = H[el.tagName];
     const lab = level === undefined && isLabel(el);
     if (level !== undefined || lab) {
@@ -206,11 +227,11 @@ _JS_EXTRACT = r"""
     }
     if (el.tagName === 'A' && el.href) {
       const url = el.href;
-      if (!/\.pdf($|[?#])/i.test(url) || seen.has(url)) continue;
+      if (!isPdf(url) || seen.has(url)) continue;
       seen.add(url);
       const text = clean(el.innerText || el.textContent) || clean(el.title) || clean(el.getAttribute('aria-label'));
-      const entries = Object.values(stack).concat(label ? [label] : []);
-      const context = entries.sort((a, b) => b[0] - a[0]).map(e => e[1]);
+      const entries = Object.values(stack).concat([label, seriesLabel].filter(Boolean));
+      const context = [...new Set(entries.sort((a, b) => b[0] - a[0]).map(e => e[1]))];
       out.push({url, text, context, extra: '', source_page: location.href});
     }
   }
@@ -227,12 +248,44 @@ def _settle(page) -> None:
         page.wait_for_timeout(3_000)
 
 
-def fetch_browser(seed: dict, settings: dict, session: requests.Session) -> list[dict]:
+COOKIE_BUTTONS = [
+    "#onetrust-reject-all-handler",
+    "button:has-text('Reject all')",
+    "button:has-text('Reject')",
+    "button:has-text('Necessary only')",
+    "button:has-text('Only necessary')",
+    "#onetrust-accept-btn-handler",
+    "button:has-text('Accept all')",
+    "button:has-text('Accept')",
+]
+
+
+def _dismiss_cookies(page) -> None:
+    """Close a cookie banner so it can't cover buttons. Prefers rejecting."""
+    for selector in COOKIE_BUTTONS:
+        try:
+            button = page.locator(selector).filter(visible=True).first
+            if button.count():
+                button.click(timeout=2_000)
+                page.wait_for_timeout(500)
+                return
+        except Exception:  # noqa: BLE001
+            continue
+
+
+def _open_page(p, url: str, agent: str):
+    browser = p.chromium.launch()
+    page = browser.new_page(user_agent=agent)
+    return browser, page
+
+
+def fetch_browser(seed: dict, settings: dict, session: requests.Session, notes: list | None = None) -> list[dict]:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:  # pragma: no cover
         raise HarvestError("Playwright is not installed: pip install playwright && playwright install chromium") from exc
 
+    notes = notes if notes is not None else []
     agent = user_agent(settings)
     if not allowed_by_robots(seed["url"], agent, session):
         raise HarvestError("robots.txt disallows this page")
@@ -251,39 +304,52 @@ def fetch_browser(seed: dict, settings: dict, session: requests.Session) -> list
 
     _polite_wait(seed["url"])
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page(user_agent=agent)
-        page.on("response", on_response)
-        resp = page.goto(seed["url"], wait_until="domcontentloaded", timeout=60_000)
-        if resp is None or resp.status != 200:
-            browser.close()
-            raise HarvestError(f"HTTP {resp.status if resp else 'no response'}")
-        _settle(page)
-
-        for selector in opts.get("click_before", []):
-            try:
-                page.click(selector, timeout=5_000)
-                _settle(page)
-            except Exception:  # noqa: BLE001
-                log.warning("%s: could not click %r", seed["id"], selector)
-        if opts.get("wait_for"):
-            try:
-                page.wait_for_selector(opts["wait_for"], timeout=20_000)
-            except Exception:  # noqa: BLE001
-                log.warning("%s: %r never appeared", seed["id"], opts["wait_for"])
-        if opts.get("expand_all", True):
-            page.evaluate("() => document.querySelectorAll('details').forEach(d => d.open = true)")
-
-        links.extend(page.evaluate(_JS_EXTRACT))
-        for _ in range(int(opts.get("max_pages", 1)) - 1):
-            nxt = opts.get("next_selector")
-            if not nxt or not page.query_selector(nxt) or page.is_disabled(nxt):
-                break
-            time.sleep(REQUEST_DELAY_SECONDS)
-            page.click(nxt)
+        browser, page = _open_page(p, seed["url"], agent)
+        try:
+            page.on("response", on_response)
+            resp = page.goto(seed["url"], wait_until="domcontentloaded", timeout=60_000)
+            if resp is None or resp.status != 200:
+                raise HarvestError(f"HTTP {resp.status if resp else 'no response'}")
             _settle(page)
+            _dismiss_cookies(page)
+
+            for selector in opts.get("click_before", []):
+                try:
+                    page.locator(selector).filter(visible=True).first.click(timeout=5_000)
+                    _settle(page)
+                except Exception:  # noqa: BLE001
+                    notes.append(f"could not click {selector!r}")
+            if opts.get("wait_for"):
+                try:
+                    page.wait_for_selector(opts["wait_for"], timeout=20_000)
+                except Exception:  # noqa: BLE001
+                    notes.append(f"{opts['wait_for']!r} never appeared")
+            if opts.get("expand_all", True):
+                page.evaluate("() => document.querySelectorAll('details').forEach(d => d.open = true)")
+
             links.extend(page.evaluate(_JS_EXTRACT))
-        browser.close()
+            pages = 1
+            nxt = opts.get("next_selector")
+            while nxt and pages < int(opts.get("max_pages", 1)):
+                button = page.locator(nxt).filter(visible=True).first
+                try:
+                    if not button.count() or button.is_disabled():
+                        break
+                    time.sleep(REQUEST_DELAY_SECONDS)
+                    button.click(timeout=10_000)
+                except Exception:  # noqa: BLE001 - keep what we have
+                    notes.append(f"stopped paging after page {pages}: Next button could not be clicked")
+                    break
+                _settle(page)
+                before = len({l["url"] for l in links})
+                links.extend(page.evaluate(_JS_EXTRACT))
+                pages += 1
+                if len({l["url"] for l in links}) == before and not json_bodies:
+                    break  # "Next" didn't load anything new
+            if pages > 1:
+                notes.append(f"read {pages} pages of results")
+        finally:
+            browser.close()
 
     for url, body in json_bodies:
         links.extend(links_from_json(body, seed["url"]))
@@ -298,13 +364,43 @@ def fetch_browser(seed: dict, settings: dict, session: requests.Session) -> list
     return [{k: v for k, v in link.items() if k != "_score"} for link in best.values()]
 
 
-def harvest(seed: dict, settings: dict, session: requests.Session | None = None) -> list[dict]:
+def page_links(url: str, mode: str, settings: dict, session: requests.Session) -> list[dict]:
+    """Every link on a page (url + text). Used to discover qualification pages."""
+    agent = user_agent(settings)
+    if not allowed_by_robots(url, agent, session):
+        raise HarvestError("robots.txt disallows this page")
+    _polite_wait(url)
+    if mode == "static":
+        resp = session.get(url, timeout=TIMEOUT)
+        if resp.status_code != 200:
+            raise HarvestError(f"HTTP {resp.status_code}")
+        soup = BeautifulSoup(resp.text, "lxml")
+        return [{"url": urljoin(resp.url, a["href"].strip()), "text": clean(a.get_text(" "))}
+                for a in soup.find_all("a", href=True)]
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser, page = _open_page(p, url, agent)
+        try:
+            resp = page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+            if resp is None or resp.status != 200:
+                raise HarvestError(f"HTTP {resp.status if resp else 'no response'}")
+            _settle(page)
+            _dismiss_cookies(page)
+            return page.evaluate(
+                "() => [...document.querySelectorAll('a[href]')].map(a => ({url: a.href, "
+                "text: (a.innerText || a.textContent || '').replace(/\\s+/g, ' ').trim()}))"
+            )
+        finally:
+            browser.close()
+
+
+def harvest(seed: dict, settings: dict, session: requests.Session | None = None, notes: list | None = None) -> list[dict]:
     session = session or new_session(settings)
     mode = seed.get("mode", "static")
     if mode == "static":
         return fetch_static(seed, settings, session)
     if mode == "browser":
-        return fetch_browser(seed, settings, session)
+        return fetch_browser(seed, settings, session, notes)
     raise HarvestError(f"unknown mode {mode!r}")
 
 

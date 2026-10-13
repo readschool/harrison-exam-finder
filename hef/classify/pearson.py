@@ -34,6 +34,9 @@ def classify(url: str, text: str, context: list[str], extra: str, seed: dict) ->
         return out
 
     out["spec_code"] = m.group("spec").upper()
+    # A-level pages also carry the AS papers: AS codes start 8, A-level codes 9.
+    if seed.get("level") in ("A-level", "AS") and out["spec_code"][0] in "89":
+        out["level"] = "AS" if out["spec_code"][0] == "8" else "A-level"
     out["doc_type"] = _TYPES[m.group("type").lower()]
 
     comp = m.group("comp").lower()

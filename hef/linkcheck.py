@@ -1,8 +1,11 @@
-"""Check that every indexed link still points at a live PDF.
+"""Check that indexed links point at a live, public PDF.
 
-A link is hidden ("gone") after it fails ``GONE_AFTER`` checks in a row, so a
-board's site having a bad night does not wipe papers from the index. A link
-that recovers is shown again.
+* New links are checked first, every run. A new link that doesn't work is
+  "blocked" and stays hidden; boards list their newest papers before they are
+  public (teachers only), and those open up months later.
+* A link that used to work is hidden ("gone") only after ``GONE_AFTER`` failed
+  checks in a row, so a board's site having a bad night changes nothing.
+* Blocked and gone links keep being rechecked and reappear when they work.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from .harvest import new_session
 log = logging.getLogger(__name__)
 
 GONE_AFTER = 3
-DELAY_PER_HOST = 1.0
+DELAY_PER_HOST = 0.5
 TIMEOUT = 30
 
 
@@ -55,15 +58,15 @@ def _check_host(session: requests.Session, docs: list[dict]) -> list[tuple[dict,
 def run(docs: list[dict], settings: dict, limit: int | None = None) -> dict:
     """Check links, one polite worker per host. Mutates and returns stats."""
     session = new_session(settings)
-    todo = sorted(docs, key=lambda d: d.get("last_checked") or "")
-    if limit:
-        todo = todo[:limit]
+    new = [d for d in docs if d.get("status", "unchecked") == "unchecked"]
+    others = sorted((d for d in docs if d.get("status", "unchecked") != "unchecked"), key=lambda d: d.get("last_checked") or "")
+    todo = new + (others[:limit] if limit else others)
 
     by_host: dict[str, list[dict]] = defaultdict(list)
     for doc in todo:
         by_host[urlparse(doc["url"]).netloc].append(doc)
 
-    stats = {"checked": 0, "ok": 0, "failed": 0, "now_gone": 0, "recovered": 0}
+    stats = {"checked": 0, "ok": 0, "failed": 0, "now_gone": 0, "recovered": 0, "blocked": 0}
     timestamp = store.now()
     with ThreadPoolExecutor(max_workers=max(1, len(by_host))) as pool:
         for results in pool.map(lambda host_docs: _check_host(session, host_docs), by_host.values()):
@@ -72,14 +75,18 @@ def run(docs: list[dict], settings: dict, limit: int | None = None) -> dict:
                 doc["last_checked"] = timestamp
                 if ok:
                     stats["ok"] += 1
-                    if doc.get("status") == "gone":
+                    if doc.get("status") in ("gone", "blocked"):
                         stats["recovered"] += 1
                     doc.update(status="ok", fail_count=0, last_error=None)
                 else:
                     stats["failed"] += 1
                     doc["fail_count"] = doc.get("fail_count", 0) + 1
                     doc["last_error"] = why
-                    if doc["fail_count"] >= GONE_AFTER and doc.get("status") != "gone":
+                    if doc.get("status", "unchecked") in ("unchecked", "blocked"):
+                        if doc.get("status") != "blocked":
+                            stats["blocked"] += 1
+                        doc["status"] = "blocked"
+                    elif doc["fail_count"] >= GONE_AFTER and doc.get("status") != "gone":
                         doc["status"] = "gone"
                         doc["gone_since"] = timestamp
                         stats["now_gone"] += 1

@@ -6,7 +6,7 @@ import json
 import re
 import shutil
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from . import SITE_NAME, store
@@ -19,7 +19,12 @@ DIST = store.ROOT / "dist"
 # question paper sat up to this many days earlier.
 ALIGN_WINDOW_DAYS = 160
 
-VISIBLE_STATUSES = {"ok", "unchecked"}
+# Only links the checker has confirmed are shown; "blocked" ones (for example
+# papers still restricted to teachers) stay hidden until they open up.
+VISIBLE_STATUSES = {"ok"}
+LEVEL_ORDER = ["GCSE", "AS", "A-level"]
+# A paper its board page stops listing is hidden after this many days.
+UNLISTED_GRACE_DAYS = 14
 
 
 def _family(doc: dict) -> tuple:
@@ -50,7 +55,14 @@ def _natural(text: str) -> list:
 
 
 def group_papers(docs: list[dict]) -> list[dict]:
-    docs = [dict(d) for d in docs if d.get("status", "unchecked") in VISIBLE_STATUSES]
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=UNLISTED_GRACE_DAYS)).isoformat()
+    docs = [
+        dict(d) for d in docs
+        if d.get("status", "unchecked") in VISIBLE_STATUSES
+        and not (d.get("unlisted_since") and d["unlisted_since"] < cutoff)
+    ]
+    for d in docs:
+        d.setdefault("qualification", d["subject"])
     align_dated_series(docs)
 
     papers: dict[tuple, dict] = {}
@@ -63,6 +75,7 @@ def group_papers(docs: list[dict]) -> list[dict]:
                 "board": doc["board"],
                 "level": doc["level"],
                 "subject": doc["subject"],
+                "qualification": doc["qualification"],
                 "spec_code": doc["spec_code"],
                 "series": doc["series"],
                 "series_key": doc["series_key"],
@@ -79,7 +92,7 @@ def group_papers(docs: list[dict]) -> list[dict]:
     for paper in out:
         paper["docs"] = {t: paper["docs"][t] for t in DOC_TYPES if t in paper["docs"]}
     out.sort(key=lambda p: (
-        p["subject"], p["board"], p["level"],
+        p["subject"], p["board"], p["level"], p["qualification"], p["spec_code"],
         "".join(chr(255 - ord(c)) for c in p["series_key"]),  # newest series first
         _natural(p["paper"]), p["tier"],
     ))
@@ -102,7 +115,7 @@ def build(docs: list[dict] | None = None, dest: Path = DIST) -> dict:
         "document_count": sum(len(p["docs"]) for p in papers),
         "boards": sorted({p["board"] for p in papers}),
         "subjects": sorted({p["subject"] for p in papers}),
-        "levels": sorted({p["level"] for p in papers}),
+        "levels": sorted({p["level"] for p in papers}, key=lambda l: (LEVEL_ORDER.index(l) if l in LEVEL_ORDER else 99, l)),
         "hidden_links": sum(1 for d in docs if d.get("status") == "gone"),
     }
     (dest / "data" / "papers.json").write_text(json.dumps(papers, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")

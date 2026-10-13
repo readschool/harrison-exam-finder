@@ -1,6 +1,8 @@
 """Command line: ``python -m hef <command>``.
 
+  discover      list every qualification page that will be scraped
   scrape        harvest seed pages, classify links, update data/documents.json
+  merge         merge per-board results from `scrape --out` into the store
   check-links   check indexed links, hide ones that have gone
   build         group into papers and build the website into dist/
   doctor        explain what a scrape found per seed (also written by scrape)
@@ -20,7 +22,7 @@ from pathlib import Path
 import yaml
 
 from . import build as builder
-from . import harvest, linkcheck, store
+from . import discover, harvest, linkcheck, store
 from .classify import classify
 
 CONFIG = store.ROOT / "config" / "sources.yaml"
@@ -29,39 +31,73 @@ log = logging.getLogger("hef")
 
 def load_config(path: Path = CONFIG) -> dict:
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config.setdefault("seeds", [])
+    config.setdefault("discovery", [])
     for seed in config["seeds"]:
         seed.setdefault("mode", "static")
         seed.setdefault("enabled", True)
     return config
 
 
-def select_seeds(config: dict, board: str | None, seed_id: str | None) -> list[dict]:
-    seeds = [s for s in config["seeds"] if s["enabled"]]
-    if board:
-        seeds = [s for s in seeds if s["board"].lower().startswith(board.lower())]
-    if seed_id:
-        seeds = [s for s in seeds if s["id"] == seed_id]
-    return seeds
+def _board_match(board: str, wanted: str | None) -> bool:
+    return not wanted or board.lower().startswith(wanted.lower())
+
+
+def all_seeds(config: dict, settings: dict, session, board: str | None) -> tuple[list[dict], list[dict]]:
+    """Discovered seeds plus hand-written ones. Returns (seeds, discovery report)."""
+    discovered, report = [], []
+    for entry in config["discovery"]:
+        if not entry.get("enabled", True) or not _board_match(entry["board"], board):
+            continue
+        seeds, notes = discover.discover(entry, settings, session)
+        log.info("%s: discovered %d qualifications", entry["board"], len(seeds))
+        discovered.extend(seeds)
+        report.append({"board": entry["board"], "found": len(seeds), "notes": notes})
+    manual = [s for s in config["seeds"] if _board_match(s["board"], board)]
+    seeds = discover.merge_seeds(discovered, manual)
+    for seed in seeds:
+        seed.setdefault("mode", "static")
+        seed.setdefault("enabled", True)
+    return [s for s in seeds if s["enabled"]], report
+
+
+def discover_cmd(args) -> int:
+    config = load_config()
+    settings = config.get("settings", {})
+    seeds, report = all_seeds(config, settings, harvest.new_session(settings), args.board)
+    store.REPORTS.mkdir(parents=True, exist_ok=True)
+    out = store.REPORTS / "seeds.json"
+    out.write_text(json.dumps(seeds, indent=1, ensure_ascii=False), encoding="utf-8")
+    for r in report:
+        print(f"{r['board']}: {r['found']} qualifications ({'; '.join(r['notes'])})")
+    print(f"{len(seeds)} seeds in total, written to {out}")
+    return 0
 
 
 def scrape(args) -> int:
     config = load_config()
     settings = config.get("settings", {})
-    seeds = select_seeds(config, args.board, args.seed)
+    session = harvest.new_session(settings)
+    if args.seed:
+        seeds, discovery_report = all_seeds(config, settings, session, args.board)
+        seeds = [s for s in seeds if s["id"] == args.seed]
+    else:
+        seeds, discovery_report = all_seeds(config, settings, session, args.board)
     if not seeds:
-        log.error("No matching seeds.")
+        log.error("No matching seeds. Run `python -m hef discover` to list them.")
         return 1
 
-    session = harvest.new_session(settings)
     all_docs: list[dict] = []
     report: list[dict] = []
-    for seed in seeds:
+    for n, seed in enumerate(seeds, 1):
         entry = {"seed": seed["id"], "board": seed["board"], "url": seed["url"], "mode": seed["mode"]}
+        notes: list[str] = []
         try:
-            links = harvest.harvest(seed, settings, session)
+            links = harvest.harvest(seed, settings, session, notes)
         except Exception as exc:  # noqa: BLE001 - one bad seed must not stop the run
-            log.warning("%s: %s", seed["id"], exc)
-            entry["error"] = str(exc)
+            log.warning("[%d/%d] %s: %s", n, len(seeds), seed["id"], str(exc).splitlines()[0])
+            entry["error"] = str(exc).splitlines()[0][:300]
+            entry["notes"] = notes
             report.append(entry)
             continue
 
@@ -75,60 +111,106 @@ def scrape(args) -> int:
             else:
                 unclassified.append({"url": link["url"], "text": link["text"], "context": link["context"][:3], "why": result.reason})
         all_docs.extend(kept)
+        series = sorted({(d["series_key"], d["series"]) for d in kept}, reverse=True)
         entry.update(
-            links=len(links), kept=len(kept), skipped=dict(skipped), unclassified=unclassified,
+            links=len(links), kept=len(kept), skipped=dict(skipped), unclassified=unclassified, notes=notes,
             doc_types=dict(Counter(d["doc_type"] for d in kept)),
-            series=sorted({d["series"] for d in kept}, reverse=True),
+            series=[label for _, label in series],
             levels=dict(Counter(d["level"] for d in kept)),
         )
         report.append(entry)
-        log.info("%s: %d links, %d kept, %d unclassified", seed["id"], len(links), len(kept), len(unclassified))
+        log.info("[%d/%d] %s: %d links, %d kept, %d unclassified", n, len(seeds), seed["id"], len(links), len(kept), len(unclassified))
         if args.save_raw:
             raw = store.REPORTS / "raw" / f"{seed['id']}.json"
             raw.parent.mkdir(parents=True, exist_ok=True)
             raw.write_text(harvest.dump(links), encoding="utf-8")
 
-    if not args.dry_run:
-        docs, stats = store.merge(store.load(), all_docs)
+    scraped_seeds = sorted(r["seed"] for r in report if "error" not in r and r.get("links"))
+    if args.out:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"docs": all_docs, "scraped_seeds": scraped_seeds,
+                                   "report": report, "discovery": discovery_report}, ensure_ascii=False), encoding="utf-8")
+        log.info("Wrote %d documents to %s", len(all_docs), out)
+    elif not args.dry_run:
+        docs, stats = store.merge(store.load(), all_docs, scraped_seeds=set(scraped_seeds))
         store.save(docs)
-        log.info("Store: %d added, %d updated, %d total", stats["added"], stats["updated"], len(docs))
-    write_report(report)
+        log.info("Store: %s, %d total", stats, len(docs))
+    write_report(report, discovery_report)
 
-    failed = [r for r in report if "error" in r or not r.get("kept")]
-    if failed and len(failed) == len(report):
+    if all("error" in r or not r.get("kept") for r in report):
         log.error("Every seed failed or found nothing; see data/reports/scrape-report.md")
         return 2
     return 0
 
 
-def write_report(report: list[dict]) -> Path:
+def merge_cmd(args) -> int:
+    """Merge partial scrape results (one file per board) into the store."""
+    docs, seeds, report, discovery_report = [], set(), [], []
+    for name in args.files:
+        part = json.loads(Path(name).read_text(encoding="utf-8"))
+        docs += part["docs"]
+        seeds |= set(part["scraped_seeds"])
+        report += part["report"]
+        discovery_report += part.get("discovery", [])
+    if not report:
+        log.error("No scrape results to merge.")
+        return 1
+    merged, stats = store.merge(store.load(), docs, scraped_seeds=seeds)
+    store.save(merged)
+    log.info("Store: %s, %d total", stats, len(merged))
+    write_report(report, discovery_report)
+    return 0
+
+
+def _problem(r: dict) -> str | None:
+    if "error" in r:
+        return f"ERROR: {r['error']}"
+    if not r["links"]:
+        return "No PDF links found"
+    if not r["kept"]:
+        return "Links found but none classified"
+    if len(r["unclassified"]) > max(10, r["kept"] * 0.25):
+        return "Many unclassified links"
+    return None
+
+
+def write_report(report: list[dict], discovery_report: list[dict] | None = None) -> Path:
     store.REPORTS.mkdir(parents=True, exist_ok=True)
     (store.REPORTS / "scrape-report.json").write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
+    ok = [r for r in report if not _problem(r)]
+    problems = [r for r in report if _problem(r)]
     lines = ["# Scrape report", "", f"Generated {store.now()}", "",
-             "| Seed | Links | Kept | Unclassified | Status |", "|---|---|---|---|---|"]
+             f"- Pages read: {len(report)}",
+             f"- Working well: {len(ok)}",
+             f"- Need attention: {len(problems)}",
+             f"- Documents kept: {sum(r.get('kept', 0) for r in report)}", ""]
+    if discovery_report:
+        lines += ["## Qualifications found", ""]
+        for d in discovery_report:
+            lines.append(f"- {d['board']}: {d['found']} ({'; '.join(d['notes'])})")
+        lines.append("")
+    if problems:
+        lines += ["## Need attention", "", "| Page | Links | Kept | Unclassified | Problem |", "|---|---|---|---|---|"]
+        for r in problems:
+            lines.append(f"| {r['seed']} | {r.get('links', '-')} | {r.get('kept', '-')} | {len(r.get('unclassified', []))} | {_problem(r)} |")
+        lines.append("")
+    lines += ["## All pages", "", "| Page | Links | Kept | Series | Notes |", "|---|---|---|---|---|"]
     for r in report:
-        if "error" in r:
-            status = f"ERROR: {r['error']}"
-        elif not r["links"]:
-            status = "No PDF links found - page may need `mode: browser` or a new URL"
-        elif not r["kept"]:
-            status = "Links found but none classified - check samples below"
-        else:
-            status = "OK"
-        lines.append(f"| {r['seed']} | {r.get('links', '-')} | {r.get('kept', '-')} | {len(r.get('unclassified', []))} | {status} |")
-    for r in report:
-        if r.get("unclassified") or r.get("kept"):
-            lines += ["", f"## {r['seed']}", "", f"Source: {r['url']} ({r['mode']})"]
-            if r.get("kept"):
-                lines.append(f"- Document types: {r['doc_types']}")
-                lines.append(f"- Levels: {r['levels']}")
-                lines.append(f"- Series: {', '.join(r['series'][:8])}{' ...' if len(r['series']) > 8 else ''}")
-            if r.get("skipped"):
-                lines.append(f"- Skipped: {r['skipped']}")
-            if r.get("unclassified"):
-                lines.append(f"- Unclassified samples (of {len(r['unclassified'])}):")
-                for u in r["unclassified"][:10]:
-                    lines.append(f"  - `{u['text'] or '(no text)'}` - {u['why']} - context: {' > '.join(u['context']) or '(none)'} - {u['url']}")
+        series = r.get("series", [])
+        span = f"{series[-1]} to {series[0]}" if len(series) > 1 else (series[0] if series else "-")
+        lines.append(f"| {r['seed']} | {r.get('links', '-')} | {r.get('kept', '-')} | {span} | {'; '.join(r.get('notes', []))} |")
+    for r in problems:
+        lines += ["", f"### {r['seed']}", "", f"Source: {r['url']} ({r['mode']})"]
+        if r.get("kept"):
+            lines.append(f"- Document types: {r['doc_types']}")
+            lines.append(f"- Levels: {r['levels']}")
+        if r.get("skipped"):
+            lines.append(f"- Skipped: {r['skipped']}")
+        if r.get("unclassified"):
+            lines.append(f"- Unclassified samples (of {len(r['unclassified'])}):")
+            for u in r["unclassified"][:10]:
+                lines.append(f"  - `{u['text'] or '(no text)'}` - {u['why']} - context: {' > '.join(u['context']) or '(none)'} - {u['url']}")
     path = store.REPORTS / "scrape-report.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -186,7 +268,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seed", help="only this seed id")
     p.add_argument("--dry-run", action="store_true", help="report only; do not update the store")
     p.add_argument("--save-raw", action="store_true", help="also save raw harvested links per seed")
+    p.add_argument("--out", help="write results to this file instead of the store (merge them later)")
     p.set_defaults(func=scrape)
+
+    p = sub.add_parser("discover", help="list every qualification page that will be scraped")
+    p.add_argument("--board")
+    p.set_defaults(func=discover_cmd)
+
+    p = sub.add_parser("merge", help="merge per-board scrape results into the store")
+    p.add_argument("files", nargs="+")
+    p.set_defaults(func=merge_cmd)
 
     p = sub.add_parser("check-links", help="check indexed links")
     p.add_argument("--limit", type=int, help="check at most N links (oldest-checked first)")

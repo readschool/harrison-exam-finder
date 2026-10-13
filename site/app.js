@@ -89,7 +89,7 @@
     // Group by qualification (board + level + subject + spec), keeping data order.
     const byKey = new Map();
     for (const p of hits) {
-      const key = `${p.board}|${p.level}|${p.subject}|${p.spec_code}`;
+      const key = `${p.board}|${p.level}|${p.qualification || p.subject}|${p.spec_code}`;
       if (!byKey.has(key)) byKey.set(key, []);
       byKey.get(key).push(p);
     }
@@ -120,7 +120,7 @@
   function renderGroup(items) {
     const first = items[0];
     const node = groupTpl.content.firstElementChild.cloneNode(true);
-    node.querySelector(".group__title").textContent = `${first.board} ${first.level} ${first.subject}`;
+    node.querySelector(".group__title").textContent = `${first.board} ${first.level} ${first.qualification || first.subject}`;
     const codes = [...new Set(items.map((p) => p.spec_code).filter(Boolean))];
     node.querySelector(".group__spec").textContent = codes.length ? `Specification ${codes.join(", ")}` : "";
 
@@ -202,7 +202,7 @@
       const meta = await mRes.json();
 
       for (const p of papers) {
-        p._text = norm([p.subject, p.board, p.level, p.spec_code, p.paper, p.series, p.tier].join(" "));
+        p._text = norm([p.subject, p.qualification, p.board, p.level, p.spec_code, p.paper, p.series, p.tier].join(" "));
       }
       fillSelect("subject", meta.subjects);
       fillSelect("level", meta.levels);

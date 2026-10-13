@@ -16,7 +16,7 @@ REPORTS = DATA / "reports"
 
 # Fields that come from scraping and may be refreshed on every run.
 SCRAPED_FIELDS = (
-    "board", "level", "subject", "spec_code", "series", "series_key", "series_source",
+    "board", "level", "subject", "qualification", "spec_code", "series", "series_key", "series_source",
     "doc_date", "component", "component_name", "tier", "doc_type", "title",
     "source_page", "seed",
 )
@@ -38,17 +38,22 @@ def save(docs: list[dict], path: Path = DOCUMENTS) -> None:
     path.write_text(json.dumps(docs, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def merge(existing: list[dict], scraped: list[dict], timestamp: str | None = None) -> tuple[list[dict], dict]:
+def merge(existing: list[dict], scraped: list[dict], timestamp: str | None = None,
+          scraped_seeds: set[str] | None = None) -> tuple[list[dict], dict]:
     """Merge freshly scraped documents into the store.
 
     New URLs are added; known URLs get their scraped fields refreshed and
-    ``last_seen`` updated. Documents not seen this run are kept: the link
-    checker, not the scraper, decides when a link has gone.
+    ``last_seen`` updated. A known document that its source page no longer
+    lists (``scraped_seeds`` names the pages read successfully this run) gets
+    ``unlisted_since`` set; the site hides it after a grace period. Dead links
+    are the link checker's job.
     """
     timestamp = timestamp or now()
     by_url = {d["url"]: d for d in existing}
-    stats = {"added": 0, "updated": 0}
+    stats = {"added": 0, "updated": 0, "unlisted": 0}
+    seen = set()
     for doc in scraped:
+        seen.add(doc["url"])
         current = by_url.get(doc["url"])
         if current is None:
             by_url[doc["url"]] = {
@@ -65,5 +70,11 @@ def merge(existing: list[dict], scraped: list[dict], timestamp: str | None = Non
                 if key in doc:
                     current[key] = doc[key]
             current["last_seen"] = timestamp
+            current.pop("unlisted_since", None)
             stats["updated"] += 1
+    if scraped_seeds:
+        for doc in by_url.values():
+            if doc["url"] not in seen and doc.get("seed") in scraped_seeds and not doc.get("unlisted_since"):
+                doc["unlisted_since"] = timestamp
+                stats["unlisted"] += 1
     return list(by_url.values()), stats

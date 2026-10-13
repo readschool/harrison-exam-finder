@@ -82,8 +82,15 @@ _DOC_TYPE_PATTERNS = [
 # Things that are published next to papers but are not part of one.
 _SKIP_PATTERNS = re.compile(
     r"modified|braille|large print|enlarged|\bA3\b|\bsample\b|\bspecimen\b|"
-    r"formula(e)? (sheet|booklet)|data sheet|equations? sheet|grade boundar|"
-    r"candidate exemplar|exemplar|transcript|audio|\bmp3\b|\bzip\b",
+    r"formula(e)? (sheet|booklet)|data (sheet|booklet)|equations? sheet|grade boundar|"
+    r"candidate exemplar|exemplar|transcript|audio|\bmp3\b|\bzip\b|"
+    # Teaching and practice material published next to real papers.
+    r"practice (paper|set|question)|\bmock\b|diagnostic|performance data|analy[sz]er|"
+    r"getting started|specification|progression|differences|guidance|guide\b|"
+    r"poster|worksheet|practical (booklet|skills|handbook)|scheme of work|"
+    r"glossary|command words|checklist|mathematics in science|maths in science|"
+    r"moderators?['’]? report|grade descriptor|teaching|delivery|topic test|"
+    r"knowledge organi[sz]er|walking talking|\bfaq",
     re.I,
 )
 

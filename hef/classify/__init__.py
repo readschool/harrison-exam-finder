@@ -62,12 +62,14 @@ def classify(link: dict, seed: dict) -> Result:
         or seed.get("spec_code")
         or ""
     )
+    mapped = (seed.get("subject_by_spec") or {}).get(spec_code)
     doc = {
         "url": url,
         "board": seed["board"],
         "level": level,
-        "subject": (seed.get("subject_by_spec") or {}).get(spec_code, seed["subject"]),
+        "subject": mapped or seed["subject"],
         "spec_code": spec_code,
+        "qualification": mapped or seed.get("qualification") or seed["subject"],
         "series": fields["series"],
         "series_key": fields["series_key"],
         "series_source": fields.get("series_source", "text"),

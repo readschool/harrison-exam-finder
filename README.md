@@ -14,11 +14,12 @@ Exam board websites  ->  scrapers (weekly)  ->  data/documents.json  ->  website
 
 | Part | Where | What it does |
 |---|---|---|
-| Sources | `config/sources.yaml` | The official board pages to read, one per qualification ("seeds") |
+| Sources | `config/sources.yaml` | Where each board lists its qualifications. Every GCSE, AS and A-level found there becomes a page to read ("seed"), so new subjects are picked up automatically |
+| Discovery | `hef/discover.py` | Reads those lists and turns each qualification into the page that holds its past papers |
 | Scrapers | `hef/harvest.py` | Reads each page, either as plain HTML or in a headless browser for pages built with JavaScript, and collects every PDF link with the headings around it |
 | Rules | `hef/classify/` | Works out board, subject, level, series, paper, tier and document type. AQA and Pearson put most of this in their filenames; OCR puts it in link text and headings |
 | Index | `data/documents.json` | One record per PDF. Kept in Git, so every change is visible and can be undone |
-| Link checker | `hef/linkcheck.py` | Checks every link nightly. A link is hidden after 3 failed checks in a row and comes back if it recovers |
+| Link checker | `hef/linkcheck.py` | Checks new links straight away and older ones on a rolling basis each night. Only working links are shown. A new link that doesn't work (often a paper still restricted to teachers) stays hidden until it opens up; a link that used to work is hidden after 3 failed checks in a row |
 | Website | `site/` | A static search page. It groups each paper's question paper, mark scheme and examiner report together and runs entirely in the browser |
 | Automation | `.github/workflows/` | Runs everything on a schedule and publishes the site |
 
@@ -33,10 +34,10 @@ Running costs: GitHub hosting and automation are free for a public repository. A
    - `site/about.html`: replace `YOUR-USERNAME` in the "Report a problem" link.
 4. **Let the automation save its work:** Settings → Actions → General → Workflow permissions → choose **Read and write permissions** → Save.
 5. **Turn on the website:** Settings → Pages → Build and deployment → Source: **GitHub Actions**.
-6. **Run the first update:** Actions tab → **Update index and deploy** → **Run workflow**. The first run takes 20 to 60 minutes because it visits every seed page slowly and politely.
+6. **Run the first update:** Actions tab → **Update index and deploy** → **Run workflow**. Each board is scraped in its own job at the same time. A full run reads roughly 250 qualification pages and takes 2 to 4 hours, mostly because it waits between requests to be polite; the first link check after a big scrape adds another hour or two.
 7. When it finishes, the site is live at `https://YOUR-USERNAME.github.io/harrison-exam-finder/`.
 
-From then on it updates itself: a full scrape every Monday, a link check every night.
+From then on it updates itself: a full scrape every Monday, a link check every night. To scrape just one board after changing its settings, use **Run workflow** and type `aqa`, `ocr` or `pearson` in the board box.
 
 ## The first run: what to expect
 
@@ -49,14 +50,15 @@ The scrapers were written without being able to run against the live board websi
 | `Links found but none classified` | The page labels documents in a way the rules don't recognise | Look at the samples, then adjust the board's file in `hef/classify/` (or open an issue and paste the samples) |
 | A few unclassified links | Usually harmless: specifications, guides and so on | Nothing |
 
-Seeds marked `verified: true` were checked when this was written. The others follow the board's usual URL pattern.
+The report starts with a summary and a "Need attention" table, so you don't have to read every row.
 
-To test one seed on your own computer before committing a change:
+To see every page that will be read, and to test one on your own computer:
 
 ```bash
 pip install -r requirements.txt
 python -m playwright install chromium
-python -m hef scrape --seed aqa-gcse-biology --dry-run --save-raw
+python -m hef discover --board aqa          # writes data/reports/seeds.json
+python -m hef scrape --seed aqa-gcse-biology-8461 --dry-run --save-raw
 python -m hef doctor
 ```
 
@@ -64,9 +66,9 @@ python -m hef doctor
 
 ## Adding subjects and boards
 
-**A new subject** for an existing board: copy a seed in `config/sources.yaml`, change `id`, `subject`, `spec_code` and `url`, and run the test above.
+**New subjects** are found automatically from each board's qualification list. To add a page that discovery misses, or change the settings for one page, add it under `seeds:` in `config/sources.yaml`; a seed with the same `url` as a discovered page overrides it (for example `enabled: false` to skip it).
 
-**A new board** (WJEC/Eduqas, CCEA, SQA): add seeds with `board:` set to the board's name. The generic rules read link text and headings, so they often work on their own. If the board has informative filenames like AQA and Pearson do, add a rules file in `hef/classify/` and register it in `hef/classify/__init__.py`.
+**A new board** (WJEC/Eduqas, CCEA, SQA): add a `discovery:` entry pointing at the board's list of qualifications, or add individual seeds with `board:` set to the board's name. The generic rules read link text and headings, so they often work on their own. If the board has informative filenames like AQA and Pearson do, add a rules file in `hef/classify/` and register it in `hef/classify/__init__.py`.
 
 ## Working on it locally
 
