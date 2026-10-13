@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harrison Exam Finder - free UK past papers from every board</title>
+<meta name="description" content="Search GCSE and A-level past papers, mark schemes and examiner reports from AQA, OCR and Pearson Edexcel in one place. Free, no ads, no sign-up. Every link opens the official paper on the exam board's website.">
+<link rel="preload" href="fonts/archivo-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='3' width='20' height='26' fill='%23fff' stroke='%2316202C' stroke-width='2.5'/%3E%3Cpath d='M10 10h12M10 15h12M10 20h7' stroke='%232140C4' stroke-width='2.5'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#results">Skip to results</a>
+
+<header class="cover">
+  <div class="cover__strip">
+    <a class="brand" href="./">Harrison Exam Finder</a>
+    <nav><a href="about.html">About</a></nav>
+  </div>
+
+  <div class="cover__body">
+    <h1 class="title">Find a past paper</h1>
+    <p class="lede">GCSE and A-level question papers, mark schemes and examiner reports from every board we index, in one search.</p>
+
+    <form class="boxes" id="filters" role="search" aria-label="Find papers">
+      <div class="box box--wide">
+        <label for="q">Paper, code or topic</label>
+        <input id="q" name="q" type="search" autocomplete="off" placeholder="e.g. 8461, pure maths, paper 2">
+      </div>
+      <div class="box">
+        <label for="subject">Subject</label>
+        <select id="subject" name="subject"><option value="">Any subject</option></select>
+      </div>
+      <div class="box">
+        <label for="level">Level</label>
+        <select id="level" name="level"><option value="">Any level</option></select>
+      </div>
+      <div class="box">
+        <label for="board">Exam board</label>
+        <select id="board" name="board"><option value="">Any board</option></select>
+      </div>
+      <div class="box">
+        <label for="year">Year</label>
+        <select id="year" name="year"><option value="">Any year</option></select>
+      </div>
+      <div class="box">
+        <label for="tier">Tier</label>
+        <select id="tier" name="tier">
+          <option value="">Any tier</option>
+          <option>Foundation</option>
+          <option>Higher</option>
+        </select>
+      </div>
+    </form>
+
+    <div class="cover__notes">
+      <section>
+        <h2>Instructions</h2>
+        <ul>
+          <li>Choose a subject, or type a paper name or specification code.</li>
+          <li>Each link opens the official file on the exam board's own website.</li>
+          <li>Check you have the right board and specification code; your teacher can confirm it.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Information</h2>
+        <p id="info">Loading the index&hellip;</p>
+        <p>The most recent exam series appears once the boards make it public, usually the following spring.</p>
+      </section>
+    </div>
+  </div>
+</header>
+
+<main id="results" tabindex="-1">
+  <p class="count" id="count" aria-live="polite"></p>
+  <div id="list"></div>
+  <button class="more" id="more" type="button" hidden>Show more papers</button>
+</main>
+
+<footer class="foot">
+  <p>Harrison Exam Finder is free, has no adverts, needs no account and sets no cookies.</p>
+  <p>It is not affiliated with or endorsed by AQA, OCR, Pearson Edexcel or any other exam board. Every paper is published and hosted by its exam board, which owns the copyright. This site only links to it.</p>
+  <p><a href="about.html">About this site, and how to report a broken link</a></p>
+</footer>
+
+<template id="group-tpl">
+  <section class="group">
+    <header class="group__head">
+      <h2 class="group__title"></h2>
+      <p class="group__spec"></p>
+    </header>
+    <div class="group__rows"></div>
+  </section>
+</template>
+
+<script src="app.js" defer></script>
+</body>
+</html>

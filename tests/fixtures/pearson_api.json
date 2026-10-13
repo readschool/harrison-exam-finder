@@ -1,0 +1,12 @@
+{
+  "response": {
+    "numFound": 5,
+    "docs": [
+      {"title": "Question paper - Paper 1 (Non-Calculator) Foundation Tier - June 2023", "url": "/content/dam/pdf/GCSE/mathematics/2015/exam-materials/1ma1-1f-que-20230520.pdf", "category": "Exam materials", "series": "June 2023"},
+      {"title": "Mark scheme - Paper 1 (Non-Calculator) Foundation Tier", "url": "/content/dam/pdf/GCSE/mathematics/2015/exam-materials/1ma1-1f-rms-20230824.pdf", "category": "Exam materials"},
+      {"title": "Examiner report - Paper 1 Foundation", "url": "/content/dam/pdf/GCSE/mathematics/2015/exam-materials/1ma1-1f-pef-20230824.pdf", "category": "Exam materials"},
+      {"title": "Question paper - Paper 1 Higher - November 2022", "url": "/content/dam/pdf/GCSE/mathematics/2015/exam-materials/1ma1-1h-que-20221102.pdf"},
+      {"title": "Mark scheme - Paper 1 Higher", "url": "/content/dam/pdf/GCSE/mathematics/2015/exam-materials/1ma1-1h-rms-20230112.pdf"}
+    ]
+  }
+}

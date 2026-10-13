@@ -1,0 +1,256 @@
+# Harrison Exam Finder - where to look for papers.
+#
+# Each "seed" is one official board web page that lists past papers.
+#   id          unique name, used in reports
+#   board       AQA | Pearson Edexcel | OCR (others use the generic rules)
+#   level       GCSE | AS | A-level  (default when the page doesn't say)
+#   subject     display name on the site
+#   spec_code   shown on the site; spec_codes maps level -> code for pages
+#               that cover both AS and A-level
+#   mode        static  - plain HTML (fast)
+#               browser - run the page's JavaScript in headless Chromium
+#   browser:    options for browser mode
+#     wait_for       CSS selector to wait for before reading the page
+#     click_before   list of selectors to click first (e.g. a "Past papers" tab)
+#     next_selector  pagination "Next" button; max_pages caps how many pages
+#   verified    the page was confirmed to exist when this file was written.
+#               Unverified seeds follow the board's usual URL pattern; if one
+#               fails, the scrape report says so and you fix the URL here.
+#
+# After editing, test a single seed with:
+#   python -m hef scrape --seed <id> --dry-run --save-raw && python -m hef doctor
+
+settings:
+  # Shown in the scraper's User-Agent so boards can contact you. Change this.
+  contact: "https://github.com/readschool/harrison-exam-finder"
+
+aqa_browser: &aqa_browser
+  mode: browser
+  browser:
+    wait_for: "a[href*='.pdf' i], a[href*='filestore' i]"
+    next_selector: "button:has-text('Next'):not([disabled]), a:has-text('Next')"
+    max_pages: 60
+
+pearson_browser: &pearson_browser
+  mode: browser
+  browser:
+    wait_for: "a[href*='.pdf' i]"
+    next_selector: "a:has-text('Next'), button:has-text('Next'):not([disabled])"
+    max_pages: 40
+
+seeds:
+  # ---------------------------------------------------------------- OCR ----
+  - id: ocr-gcse-maths
+    board: OCR
+    level: GCSE
+    subject: Mathematics
+    spec_code: J560
+    url: https://www.ocr.org.uk/qualifications/gcse/mathematics-j560-from-2015/assessment/
+    verified: true
+  - id: ocr-gcse-biology-a
+    board: OCR
+    level: GCSE
+    subject: Biology
+    spec_code: J247
+    url: https://www.ocr.org.uk/qualifications/gcse/gateway-science-suite-biology-a-j247-from-2016/assessment/
+    verified: true
+  - id: ocr-gcse-chemistry-a
+    board: OCR
+    level: GCSE
+    subject: Chemistry
+    spec_code: J248
+    url: https://www.ocr.org.uk/qualifications/gcse/gateway-science-suite-chemistry-a-j248-from-2016/assessment/
+  - id: ocr-gcse-physics-a
+    board: OCR
+    level: GCSE
+    subject: Physics
+    spec_code: J249
+    url: https://www.ocr.org.uk/qualifications/gcse/gateway-science-suite-physics-a-j249-from-2016/assessment/
+  - id: ocr-gcse-combined-science-a
+    board: OCR
+    level: GCSE
+    subject: Combined Science
+    spec_code: J250
+    url: https://www.ocr.org.uk/qualifications/gcse/gateway-science-suite-combined-science-a-j250-from-2016/assessment/
+  - id: ocr-gcse-english-language
+    board: OCR
+    level: GCSE
+    subject: English Language
+    spec_code: J351
+    url: https://www.ocr.org.uk/qualifications/gcse/english-language-j351-from-2015/assessment/
+  - id: ocr-gcse-english-literature
+    board: OCR
+    level: GCSE
+    subject: English Literature
+    spec_code: J352
+    url: https://www.ocr.org.uk/qualifications/gcse/english-literature-j352-from-2015/assessment/
+  - id: ocr-alevel-maths-a
+    board: OCR
+    level: A-level
+    subject: Mathematics
+    spec_codes: {AS: H230, A-level: H240}
+    url: https://www.ocr.org.uk/qualifications/as-and-a-level/mathematics-a-h230-h240-from-2017/assessment/
+    verified: true
+  - id: ocr-alevel-biology-a
+    board: OCR
+    level: A-level
+    subject: Biology
+    spec_codes: {AS: H020, A-level: H420}
+    url: https://www.ocr.org.uk/qualifications/as-and-a-level/biology-a-h020-h420-from-2015/assessment/
+  - id: ocr-alevel-chemistry-a
+    board: OCR
+    level: A-level
+    subject: Chemistry
+    spec_codes: {AS: H032, A-level: H432}
+    url: https://www.ocr.org.uk/qualifications/as-and-a-level/chemistry-a-h032-h432-from-2015/assessment/
+  - id: ocr-alevel-physics-a
+    board: OCR
+    level: A-level
+    subject: Physics
+    spec_codes: {AS: H156, A-level: H556}
+    url: https://www.ocr.org.uk/qualifications/as-and-a-level/physics-a-h156-h556-from-2015/assessment/
+
+  # ---------------------------------------------------------------- AQA ----
+  # AQA's "Assessment resources" lists load with JavaScript, so browser mode.
+  - id: aqa-gcse-maths
+    <<: *aqa_browser
+    board: AQA
+    level: GCSE
+    subject: Mathematics
+    spec_code: "8300"
+    url: https://www.aqa.org.uk/subjects/mathematics/gcse/mathematics-8300/assessment-resources
+  - id: aqa-gcse-biology
+    <<: *aqa_browser
+    board: AQA
+    level: GCSE
+    subject: Biology
+    spec_code: "8461"
+    url: https://www.aqa.org.uk/subjects/biology/gcse/biology-8461/assessment-resources
+    verified: true
+  - id: aqa-gcse-chemistry
+    <<: *aqa_browser
+    board: AQA
+    level: GCSE
+    subject: Chemistry
+    spec_code: "8462"
+    url: https://www.aqa.org.uk/subjects/chemistry/gcse/chemistry-8462/assessment-resources
+    verified: true
+  - id: aqa-gcse-physics
+    <<: *aqa_browser
+    board: AQA
+    level: GCSE
+    subject: Physics
+    spec_code: "8463"
+    url: https://www.aqa.org.uk/subjects/physics/gcse/physics-8463/assessment-resources
+  - id: aqa-gcse-combined-science-trilogy
+    <<: *aqa_browser
+    board: AQA
+    level: GCSE
+    subject: Combined Science
+    spec_code: "8464"
+    url: https://www.aqa.org.uk/subjects/science/gcse/science-8464/assessment-resources
+    verified: true
+  - id: aqa-gcse-english-language
+    <<: *aqa_browser
+    board: AQA
+    level: GCSE
+    subject: English Language
+    spec_code: "8700"
+    url: https://www.aqa.org.uk/subjects/english/gcse/english-8700/assessment-resources
+  - id: aqa-gcse-english-literature
+    <<: *aqa_browser
+    board: AQA
+    level: GCSE
+    subject: English Literature
+    spec_code: "8702"
+    url: https://www.aqa.org.uk/subjects/english/gcse/english-8702/assessment-resources
+    verified: true
+  - id: aqa-alevel-maths
+    <<: *aqa_browser
+    board: AQA
+    level: A-level
+    subject: Mathematics
+    spec_code: "7357"
+    url: https://www.aqa.org.uk/subjects/mathematics/as-and-a-level/mathematics-7357/assessment-resources
+    verified: true
+  - id: aqa-alevel-biology
+    <<: *aqa_browser
+    board: AQA
+    level: A-level
+    subject: Biology
+    spec_code: "7402"
+    url: https://www.aqa.org.uk/subjects/biology/as-and-a-level/biology-7402/assessment-resources
+  - id: aqa-alevel-chemistry
+    <<: *aqa_browser
+    board: AQA
+    level: A-level
+    subject: Chemistry
+    spec_code: "7405"
+    url: https://www.aqa.org.uk/subjects/chemistry/as-and-a-level/chemistry-7405/assessment-resources
+  - id: aqa-alevel-physics
+    <<: *aqa_browser
+    board: AQA
+    level: A-level
+    subject: Physics
+    spec_code: "7408"
+    url: https://www.aqa.org.uk/subjects/physics/as-and-a-level/physics-7408/assessment-resources
+
+  # ------------------------------------------------------ Pearson Edexcel ----
+  # Pearson's "Course materials" pages load with JavaScript; the hash selects
+  # the Exam materials category.
+  - id: pearson-gcse-maths
+    <<: *pearson_browser
+    board: Pearson Edexcel
+    level: GCSE
+    subject: Mathematics
+    spec_code: 1MA1
+    url: https://qualifications.pearson.com/en/qualifications/edexcel-gcses/mathematics-2015.coursematerials.html#filterQuery=category:Pearson-UK:Category%2FExam-materials
+  - id: pearson-gcse-sciences
+    <<: *pearson_browser
+    board: Pearson Edexcel
+    level: GCSE
+    subject: Science
+    subject_by_spec: {1BI0: Biology, 1CH0: Chemistry, 1PH0: Physics, 1SC0: Combined Science}
+    url: https://qualifications.pearson.com/en/qualifications/edexcel-gcses/sciences-2016.coursematerials.html#filterQuery=category:Pearson-UK:Category%2FExam-materials
+  - id: pearson-gcse-english-language
+    <<: *pearson_browser
+    board: Pearson Edexcel
+    level: GCSE
+    subject: English Language
+    spec_code: 1EN0
+    url: https://qualifications.pearson.com/en/qualifications/edexcel-gcses/english-language-2015.coursematerials.html#filterQuery=category:Pearson-UK:Category%2FExam-materials
+  - id: pearson-gcse-english-literature
+    <<: *pearson_browser
+    board: Pearson Edexcel
+    level: GCSE
+    subject: English Literature
+    spec_code: 1ET0
+    url: https://qualifications.pearson.com/en/qualifications/edexcel-gcses/english-literature-2015.coursematerials.html#filterQuery=category:Pearson-UK:Category%2FExam-materials
+  - id: pearson-alevel-maths
+    <<: *pearson_browser
+    board: Pearson Edexcel
+    level: A-level
+    subject: Mathematics
+    spec_code: 9MA0
+    url: https://qualifications.pearson.com/en/qualifications/edexcel-a-levels/mathematics-2017.coursematerials.html#filterQuery=category:Pearson-UK:Category%2FExam-materials
+    verified: true
+  - id: pearson-alevel-chemistry
+    <<: *pearson_browser
+    board: Pearson Edexcel
+    level: A-level
+    subject: Chemistry
+    spec_code: 9CH0
+    url: https://qualifications.pearson.com/en/qualifications/edexcel-a-levels/chemistry-2015.coursematerials.html#filterQuery=category:Pearson-UK:Category%2FExam-materials
+  - id: pearson-alevel-physics
+    <<: *pearson_browser
+    board: Pearson Edexcel
+    level: A-level
+    subject: Physics
+    spec_code: 9PH0
+    url: https://qualifications.pearson.com/en/qualifications/edexcel-a-levels/physics-2015.coursematerials.html#filterQuery=category:Pearson-UK:Category%2FExam-materials
+
+  # --------------------------------------------------------- WJEC/Eduqas ----
+  # Not yet set up. Their qualification pages have a "Past papers" tab; add
+  # seeds here with mode: browser and click_before pointing at that tab. The
+  # generic rules (link text + headings) will classify what they can, and the
+  # scrape report shows what needs a board-specific rule.
