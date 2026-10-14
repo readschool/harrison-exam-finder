@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from . import aqa, common, generic, ocr, pearson
+from . import aqa, common, generic, ocr, pearson, wjec
 
 BOARD_CLASSIFIERS = {
     "AQA": aqa.classify,
     "Pearson Edexcel": pearson.classify,
     "OCR": ocr.classify,
+    "Eduqas": wjec.classify,
+    "WJEC": wjec.classify,
 }
 
 

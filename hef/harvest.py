@@ -77,6 +77,7 @@ SERIES_LABEL = re.compile(
     r"|(january|march|may|june|october|november|summer|autumn)( exam)?( series)?\s*[-–]?\s*20\d\d( series)?)$",
     re.I,
 )
+JSON_LINK = re.compile(r'"(?:link|url|href)"\s*:\s*"((?:https?:)?(?:\\?/)[^"\s]{3,200})"')
 HEADING_TAGS = {"h1": 1, "h2": 2, "h3": 3, "h4": 4, "h5": 5, "h6": 6}
 LABEL_LEVEL = 7  # accordion summaries, tab labels and similar
 
@@ -273,6 +274,49 @@ def _dismiss_cookies(page) -> None:
             continue
 
 
+def _click_all(page, selector: str, notes: list, limit: int = 200) -> None:
+    """Click every visible match (e.g. collapsed year panels) so their links load."""
+    clicked = 0
+    try:
+        toggles = page.locator(selector).filter(visible=True)
+        for i in range(min(toggles.count(), limit)):
+            try:
+                toggles.nth(i).click(timeout=3_000)
+                clicked += 1
+                page.wait_for_timeout(300)
+            except Exception:  # noqa: BLE001
+                continue
+        _settle(page)
+    except Exception:  # noqa: BLE001
+        pass
+    if clicked:
+        notes.append(f"expanded {clicked} sections")
+
+
+def _each_option(page, selector: str, expand_selector: str | None, notes: list) -> list[dict]:
+    """For a dropdown that shows one year at a time, pick each option in turn."""
+    found: list[dict] = []
+    select = page.locator(selector).filter(visible=True).first
+    try:
+        if not select.count():
+            return found
+        values = select.evaluate("s => [...s.options].map(o => o.value).filter(v => v !== '')")
+    except Exception:  # noqa: BLE001
+        return found
+    for value in values:
+        try:
+            select.select_option(value, timeout=5_000)
+            time.sleep(REQUEST_DELAY_SECONDS / 2)
+            _settle(page)
+            if expand_selector:
+                _click_all(page, expand_selector, [])
+            found.extend(page.evaluate(_JS_EXTRACT))
+        except Exception:  # noqa: BLE001
+            continue
+    notes.append(f"read {len(values)} dropdown options")
+    return found
+
+
 def _open_page(p, url: str, agent: str):
     browser = p.chromium.launch()
     page = browser.new_page(user_agent=agent)
@@ -321,13 +365,17 @@ def fetch_browser(seed: dict, settings: dict, session: requests.Session, notes: 
                     notes.append(f"could not click {selector!r}")
             if opts.get("wait_for"):
                 try:
-                    page.wait_for_selector(opts["wait_for"], timeout=20_000)
+                    page.wait_for_selector(opts["wait_for"], state="attached", timeout=20_000)
                 except Exception:  # noqa: BLE001
                     notes.append(f"{opts['wait_for']!r} never appeared")
             if opts.get("expand_all", True):
                 page.evaluate("() => document.querySelectorAll('details').forEach(d => d.open = true)")
+            if opts.get("expand_selector"):
+                _click_all(page, opts["expand_selector"], notes)
 
             links.extend(page.evaluate(_JS_EXTRACT))
+            if opts.get("select_each"):
+                links.extend(_each_option(page, opts["select_each"], opts.get("expand_selector"), notes))
             pages = 1
             nxt = opts.get("next_selector")
             while nxt and pages < int(opts.get("max_pages", 1)):
@@ -375,8 +423,13 @@ def page_links(url: str, mode: str, settings: dict, session: requests.Session) -
         if resp.status_code != 200:
             raise HarvestError(f"HTTP {resp.status_code}")
         soup = BeautifulSoup(resp.text, "lxml")
-        return [{"url": urljoin(resp.url, a["href"].strip()), "text": clean(a.get_text(" "))}
-                for a in soup.find_all("a", href=True)]
+        links = [{"url": urljoin(resp.url, a["href"].strip()), "text": clean(a.get_text(" "))}
+                 for a in soup.find_all("a", href=True)]
+        # Some sites (WJEC/Eduqas) keep their list as JSON inside the page and
+        # draw it with JavaScript: pick up "link": "/..." values too.
+        for m in JSON_LINK.finditer(resp.text):
+            links.append({"url": urljoin(resp.url, m.group(1).replace("\\/", "/")), "text": ""})
+        return links
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser, page = _open_page(p, url, agent)

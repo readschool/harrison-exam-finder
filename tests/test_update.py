@@ -129,3 +129,49 @@ def test_cambridge_nationals(monkeypatch):
     assert paper["paper"] == "Creative iMedia in the media industry (R093)"
     assert set(paper["docs"]) == {"question_paper", "mark_scheme", "examiner_report"}
     assert paper["level"] == "Cambridge National" and paper["tier"] == ""
+
+
+def test_wjec_eduqas_rules():
+    seed = {"id": "eduqas-chem", "board": "Eduqas", "level": "A-level", "subject": "Chemistry",
+            "qualification": "Chemistry", "url": "u"}
+    base = "https://www.eduqas.co.uk/media/x/"
+    def doc(name, text="", context=()):
+        r = classify({"url": base + name, "text": text, "context": list(context)}, seed)
+        return r if r.skipped else r.doc
+
+    qp = doc("s24-a410u10-1.pdf", "Component 1")
+    assert (qp["doc_type"], qp["series"], qp["level"], qp["component"]) == ("question_paper", "June 2024", "A-level", "a410u10-1")
+    assert doc("s24-a410u10-1-ms.pdf", "Component 1 Mark Scheme")["doc_type"] == "mark_scheme"
+    assert doc("s23-b410u10-1.pdf", "AS Unit 1")["level"] == "AS"
+    assert doc("s24-a410u10-1-w.pdf", "Component 1").skipped  # Welsh-language copy
+    # A heading names the winter series; it wins over the filename's guess.
+    assert doc("w23-a410u10-1.pdf", "Component 1", ["January 2024"])["series"] == "January 2024"
+    assert doc("w22-a410u10-1.pdf", "Component 1")["series"] == "November 2022"
+
+    report = doc("eduqas-a-level-chemistry-report-s24-e.pdf", "Examiners' Report")
+    docs = [{**d, "status": "ok"} for d in (qp, doc("s24-a410u20-1.pdf", "Component 2"), report)]
+    papers = build.group_papers(docs)
+    assert len(papers) == 2  # the report is attached to both papers, not a row of its own
+    assert all("examiner_report" in p["docs"] for p in papers)
+
+
+def test_json_listing_and_slug_names(monkeypatch):
+    html = '<script>{"qualifications":[{"link":"\\/qualifications\\/english-language-and-literature-asa-level\\/"}]}</script>'
+
+    class Resp:
+        status_code, text, url = 200, html, "https://www.eduqas.co.uk/home/past-papers-and-mark-schemes/"
+
+    class Session:
+        def get(self, *a, **k):
+            return Resp()
+
+    monkeypatch.setattr("hef.harvest.allowed_by_robots", lambda *a: True)
+    monkeypatch.setattr("hef.harvest._polite_wait", lambda *a: None)
+    from hef import harvest as hv
+    links = hv.page_links(Resp.url, "static", {}, Session())
+    monkeypatch.setattr(discover.harvest, "page_links", lambda *a, **k: links)
+    from hef.cli import load_config
+    entry = next(e for e in load_config()["discovery"] if e["board"] == "Eduqas")
+    (seed,), _ = discover.discover(entry, {}, None)
+    assert (seed["subject"], seed["level"]) == ("English Language and Literature", "A-level")
+    assert seed["url"] == "https://www.eduqas.co.uk/qualifications/english-language-and-literature-asa-level/#tab_pastpapers"

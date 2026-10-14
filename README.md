@@ -4,8 +4,6 @@ A free website for searching UK past exam papers from every board in one place: 
 
 It **never hosts the papers**. It keeps an index of links to the official PDFs on each exam board's own website, and checks those links every night. That keeps the site small, free to run and on the right side of the boards' copyright.
 
-**Try it out at https://readschool.github.io/harrison-exam-finder/**
-
 ## How it works
 
 ```
@@ -39,7 +37,7 @@ Running costs: GitHub hosting and automation are free for a public repository. A
 6. **Run the first update:** Actions tab → **Update index and deploy** → **Run workflow**. Each board is scraped in its own job at the same time. A full run reads roughly 250 qualification pages and takes 2 to 4 hours, mostly because it waits between requests to be polite; the first link check after a big scrape adds another hour or two.
 7. When it finishes, the site is live at `https://YOUR-USERNAME.github.io/harrison-exam-finder/`.
 
-From then on it updates itself: a full scrape every Monday, a link check every night. To scrape just one board after changing its settings, use **Run workflow** and type `aqa`, `ocr` or `pearson` in the board box.
+From then on it updates itself: a full scrape every Monday, a link check every night. To scrape just one board after changing its settings, use **Run workflow** and type `aqa`, `ocr`, `pearson`, `eduqas` or `wjec` in the board box.
 
 ## The first run: what to expect
 
@@ -70,7 +68,7 @@ python -m hef doctor
 
 **New subjects** are found automatically from each board's qualification list. To add a page that discovery misses, or change the settings for one page, add it under `seeds:` in `config/sources.yaml`; a seed with the same `url` as a discovered page overrides it (for example `enabled: false` to skip it).
 
-**A new board** (WJEC/Eduqas, CCEA, SQA): add a `discovery:` entry pointing at the board's list of qualifications, or add individual seeds with `board:` set to the board's name. The generic rules read link text and headings, so they often work on their own. If the board has informative filenames like AQA and Pearson do, add a rules file in `hef/classify/` and register it in `hef/classify/__init__.py`.
+**A new board** (for example CCEA or SQA): add a `discovery:` entry pointing at the board's list of qualifications, or add individual seeds with `board:` set to the board's name. The generic rules read link text and headings, so they often work on their own. If the board has informative filenames like AQA and Pearson do, add a rules file in `hef/classify/` and register it in `hef/classify/__init__.py`.
 
 ## Working on it locally
 

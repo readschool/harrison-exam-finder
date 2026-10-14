@@ -34,6 +34,8 @@ def names(text: str) -> tuple[str, str]:
     """
     t = clean(text)
     t = _LEVEL_WORDS.sub("", t)
+    # Trailing level words: "Biology GCSE", "Chemistry AS/A Level", "chemistry asa level"
+    t = re.sub(r"\s+(gcse|as\s*/\s*a level|asa level|as level|a level)$", "", t, flags=re.I)
     # "Creative iMedia Level 1/2" or "... Level 1/Level 2" (Cambridge Nationals)
     t = re.sub(r"\s*\blevel 1\s*/\s*(level\s*)?2\b", "", t, flags=re.I)
     suite = ""
@@ -60,6 +62,13 @@ def names(text: str) -> tuple[str, str]:
     return subject or qualification, qualification
 
 
+def _text_from_slug(slug_text: str) -> str:
+    """"chemistry-asa-level" -> "Chemistry asa level" (level words are removed later)."""
+    words = slug_text.rstrip("/").rsplit("/", 1)[-1].split("-")
+    small = {"and", "of", "the", "in", "for", "a"}
+    return " ".join(w if (i and w in small) else w[:1].upper() + w[1:] for i, w in enumerate(words) if w)
+
+
 def _codes(slug_text: str, pattern: str) -> list[str]:
     return [c.upper() for c in re.findall(pattern, slug_text, re.I)]
 
@@ -79,8 +88,10 @@ def discover(entry: dict, settings: dict, session: requests.Session) -> tuple[li
         for link in links:
             url = urldefrag(link["url"])[0]
             m = pattern.match(url)
-            if not m or not link["text"]:
+            if not m:
                 continue
+            if not link["text"]:
+                link = {**link, "text": _text_from_slug(m.groupdict().get("slug") or url)}
             matched += 1
             # Keep the most descriptive text if a page links to it twice.
             if url not in found or len(link["text"]) > len(found[url]["text"]):

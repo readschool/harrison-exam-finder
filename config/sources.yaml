@@ -104,7 +104,37 @@ discovery:
         max_pages: 40
 
   # --------------------------------------------------------- WJEC/Eduqas ----
-  # Not set up yet. Their qualification pages have a "Past papers" tab: add a
-  # discovery entry like the ones above with click_before pointing at the tab.
+  # Both boards share one website design. Their "Past papers" page holds the
+  # full list of qualifications as data; each qualification page has a
+  # "Past Papers / Mark Schemes" tab that loads with JavaScript, sometimes
+  # with a year dropdown or collapsed sections, all of which are opened.
+  - board: Eduqas
+    listings:
+      - https://www.eduqas.co.uk/home/past-papers-and-mark-schemes/
+    listing_mode: static
+    link_pattern: '^https://www\.eduqas\.co\.uk/qualifications/(?P<slug>[a-z0-9-]+?-(?P<level>gcse|asa-level|as-level|a-level))/?$'
+    levels: &wjec_levels
+      gcse: GCSE
+      asa-level: A-level
+      as-level: AS
+      a-level: A-level
+    seed_url: "{url}/#tab_pastpapers"
+    seed: &wjec_seed
+      mode: browser
+      browser:
+        click_before:
+          - "[role='tab']:has-text('Past Papers'), a:has-text('Past Papers / Mark Schemes'), button:has-text('Past Papers')"
+        wait_for: "a[href*='.pdf' i]"
+        expand_selector: "main button[aria-expanded='false'], [role='tabpanel'] button[aria-expanded='false'], .tab-content button[aria-expanded='false']"
+        select_each: "main select, [role='tabpanel'] select, .tab-content select"
+
+  - board: WJEC
+    listings:
+      - https://www.wjec.co.uk/home/past-papers/
+    listing_mode: static
+    link_pattern: '^https://www\.wjec\.co\.uk/qualifications/(?P<slug>[a-z0-9-]+?-(?P<level>gcse|asa-level|as-level|a-level))/?$'
+    levels: *wjec_levels
+    seed_url: "{url}/#tab_pastpapers"
+    seed: *wjec_seed
 
 seeds: []

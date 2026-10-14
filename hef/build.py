@@ -23,6 +23,7 @@ ALIGN_WINDOW_DAYS = 160
 # Only links the checker has confirmed are shown; "blocked" ones (for example
 # papers still restricted to teachers) stay hidden until they open up.
 VISIBLE_STATUSES = {"ok"}
+SHARED_COMPONENT = "_all"
 LEVEL_ORDER = ["GCSE", "Cambridge National", "AS", "A-level"]
 # A paper its board page stops listing is hidden after this many days.
 UNLISTED_GRACE_DAYS = 14
@@ -66,6 +67,11 @@ def group_papers(docs: list[dict]) -> list[dict]:
         d.setdefault("qualification", d["subject"])
     align_dated_series(docs)
 
+    # Reports that cover every paper in a series (WJEC/Eduqas) are attached to
+    # each paper below rather than shown as a row of their own.
+    shared = [d for d in docs if d["component"] == SHARED_COMPONENT]
+    docs = [d for d in docs if d["component"] != SHARED_COMPONENT]
+
     papers: dict[tuple, dict] = {}
     for doc in docs:
         key = (*_family(doc), doc["series_key"])
@@ -88,6 +94,21 @@ def group_papers(docs: list[dict]) -> list[dict]:
         if doc["doc_type"] == "question_paper" and doc["component_name"]:
             paper["paper"] = doc["component_name"]
         paper["docs"].setdefault(doc["doc_type"], doc["url"])
+
+    def scope(d):
+        return (d["board"], d["level"], d["qualification"], d["series_key"])
+
+    for doc in shared:
+        targets = [p for p in papers.values() if scope(p) == scope(doc)]
+        if not targets:  # nothing to attach to: show it on its own
+            papers[(*_family(doc), doc["series_key"])] = {
+                **{k: doc[k] for k in ("board", "level", "subject", "qualification", "spec_code", "series", "series_key", "tier")},
+                "id": f"{doc['board']}-{doc['qualification']}-{doc['series_key']}-all".lower().replace(" ", ""),
+                "paper": doc["component_name"],
+                "docs": {doc["doc_type"]: doc["url"]},
+            }
+        for paper in targets:
+            paper["docs"].setdefault(doc["doc_type"], doc["url"])
 
     out = list(papers.values())
     for paper in out:
