@@ -4,6 +4,8 @@ A free website for searching UK past exam papers from every board in one place: 
 
 It **never hosts the papers**. It keeps an index of links to the official PDFs on each exam board's own website, and checks those links every night. That keeps the site small, free to run and on the right side of the boards' copyright.
 
+Try it out at 'https://readschool.github.io/harrison-exam-finder/'.
+
 ## How it works
 
 ```
