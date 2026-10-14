@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -120,4 +121,24 @@ def build(docs: list[dict] | None = None, dest: Path = DIST) -> dict:
     }
     (dest / "data" / "papers.json").write_text(json.dumps(papers, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
     (dest / "data" / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+    add_cache_busting(dest)
     return meta
+
+
+def add_cache_busting(dest: Path) -> None:
+    """Point each page at styles.css?v=<hash> and app.js?v=<hash>.
+
+    Browsers keep their own copy of these files for a while, so without this a
+    visitor can see a new page with old styles or code after an update. The
+    hash changes only when the file does, so unchanged files stay cached.
+    """
+    versions = {
+        name: hashlib.sha256((dest / name).read_bytes()).hexdigest()[:10]
+        for name in ("styles.css", "app.js")
+        if (dest / name).exists()
+    }
+    for page in dest.glob("*.html"):
+        html = page.read_text(encoding="utf-8")
+        for name, version in versions.items():
+            html = re.sub(rf'(["\']){re.escape(name)}\1', rf"\g<1>{name}?v={version}\g<1>", html)
+        page.write_text(html, encoding="utf-8")
