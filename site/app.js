@@ -196,7 +196,12 @@
 
   async function start() {
     try {
-      const [pRes, mRes] = await Promise.all([fetch("data/papers.json"), fetch("data/meta.json")]);
+      const [pRes, mRes] = await Promise.all([
+        // "no-cache" asks the server whether the index changed, so visitors
+        // see each weekly update straight away.
+        fetch("data/papers.json", { cache: "no-cache" }),
+        fetch("data/meta.json", { cache: "no-cache" }),
+      ]);
       if (!pRes.ok || !mRes.ok) throw new Error(`HTTP ${pRes.status}/${mRes.status}`);
       papers = await pRes.json();
       const meta = await mRes.json();
