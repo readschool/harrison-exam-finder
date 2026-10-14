@@ -100,3 +100,32 @@ def test_unlisted_docs_hidden_after_grace():
     assert build.group_papers(docs) == []  # long past the grace period
     docs[0]["unlisted_since"] = store.now()
     assert len(build.group_papers(docs)) == 1
+
+
+def test_cambridge_nationals(monkeypatch):
+    listing = [{"url": "https://www.ocr.org.uk/qualifications/cambridge-nationals/creative-imedia-level-1-2-j834/",
+                "text": "Creative iMedia Level 1/2"}]
+    monkeypatch.setattr(discover.harvest, "page_links", lambda *a, **k: listing)
+    from hef.cli import load_config
+    entry = next(e for e in load_config()["discovery"] if e["board"] == "OCR")
+    (seed,), _ = discover.discover(entry, {}, None)
+    assert (seed["level"], seed["subject"], seed["spec_code"]) == ("Cambridge National", "Creative iMedia", "J834")
+    assert seed["url"].endswith("/creative-imedia-level-1-2-j834/assessment/")
+
+    ctx = ["2025 - June series", "Question papers, mark schemes and reports"]
+    texts = {
+        "1-qp.pdf": "Question paper - Creative iMedia in the media industry (R093/01 - PDF 3MB)",
+        "2-ms.pdf": "Mark scheme - Creative iMedia in the media industry (R093/01 - PDF 726KB)",
+        "3-er.pdf": "Examiners' report - Creative iMedia (R093 - PDF 2MB)",
+        "4-mr.pdf": "Moderators' report - Creative iMedia (R094-R099 - PDF 457KB)",
+    }
+    docs = []
+    for name, text in texts.items():
+        r = classify({"url": f"https://www.ocr.org.uk/Images/{name}", "text": text, "context": ctx}, seed)
+        if r.doc:
+            docs.append({**r.doc, "status": "ok"})
+    assert len(docs) == 3  # moderators' report skipped
+    (paper,) = build.group_papers(docs)
+    assert paper["paper"] == "Creative iMedia in the media industry (R093)"
+    assert set(paper["docs"]) == {"question_paper", "mark_scheme", "examiner_report"}
+    assert paper["level"] == "Cambridge National" and paper["tier"] == ""

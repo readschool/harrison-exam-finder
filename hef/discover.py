@@ -34,6 +34,8 @@ def names(text: str) -> tuple[str, str]:
     """
     t = clean(text)
     t = _LEVEL_WORDS.sub("", t)
+    # "Creative iMedia Level 1/2" or "... Level 1/Level 2" (Cambridge Nationals)
+    t = re.sub(r"\s*\blevel 1\s*/\s*(level\s*)?2\b", "", t, flags=re.I)
     suite = ""
     if re.search(r"gateway", t, re.I):
         suite = " (Gateway)"

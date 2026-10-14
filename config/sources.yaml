@@ -60,12 +60,14 @@ discovery:
     listings:
       - https://www.ocr.org.uk/qualifications/gcse/
       - https://www.ocr.org.uk/qualifications/as-and-a-level/
+      - https://www.ocr.org.uk/qualifications/cambridge-nationals/
     listing_mode: static
-    link_pattern: '^https://www\.ocr\.org\.uk/qualifications/(?P<level>gcse|as-and-a-level)/(?P<slug>[a-z0-9-]*[jh]\d{3}[a-z0-9-]*)/?$'
+    link_pattern: '^https://www\.ocr\.org\.uk/qualifications/(?P<level>gcse|as-and-a-level|cambridge-nationals)/(?P<slug>[a-z0-9-]*[jh]\d{3}[a-z0-9-]*)/?$'
     code_pattern: '[jh]\d{3}'
     levels:
       gcse: GCSE
       as-and-a-level: A-level
+      cambridge-nationals: Cambridge National
     seed_url: "{url}/assessment/"
     seed:
       mode: static

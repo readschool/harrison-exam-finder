@@ -11,9 +11,21 @@ import re
 
 from . import common
 
+# Unit codes like R093 (Cambridge Nationals) or F501; only the first counts.
+UNIT_CODE = re.compile(r"\(\s*([A-Z]\d{3})(?:/\d+)?\b")
+# "(R093/01 - PDF 3MB)", "(PDF 557KB)", "(R094-R099 - PDF 457KB)"
+BRACKETED_FILE_INFO = re.compile(r"\s*\((?:[^()]*\b)?PDF\b[^()]*\)", re.I)
+
 
 def classify(url: str, text: str, context: list[str], extra: str, seed: dict) -> dict:
     out: dict = {}
+    # Cambridge Nationals/Technicals add the unit and file size in brackets:
+    # "Question paper - Creative iMedia in the media industry (R093/01 - PDF 3MB)".
+    # The unit code is what ties a paper to its mark scheme and examiner
+    # report, whose titles are worded differently ("Creative iMedia (R093)").
+    unit = UNIT_CODE.search(text)
+    text = BRACKETED_FILE_INFO.sub("", text).strip()
+
     # "Question paper - Pure mathematics" -> name after the first dash.
     parts = re.split(r"\s+[-–]\s+", text, maxsplit=1)
     if len(parts) == 2:
@@ -23,6 +35,10 @@ def classify(url: str, text: str, context: list[str], extra: str, seed: dict) ->
             out["doc_type"] = "answer_book"
         out["component_name"] = name
         out["component"] = common.slug(name)
+    if unit:
+        code = unit.group(1).upper()
+        out["component"] = code.lower()
+        out["component_name"] = f"{out['component_name']} ({code})" if out.get("component_name") else code
 
     # Nearest series heading wins; OCR also lists future series with only
     # formulae sheets, which are skipped elsewhere.

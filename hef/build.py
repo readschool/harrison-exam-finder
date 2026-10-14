@@ -23,7 +23,7 @@ ALIGN_WINDOW_DAYS = 160
 # Only links the checker has confirmed are shown; "blocked" ones (for example
 # papers still restricted to teachers) stay hidden until they open up.
 VISIBLE_STATUSES = {"ok"}
-LEVEL_ORDER = ["GCSE", "AS", "A-level"]
+LEVEL_ORDER = ["GCSE", "Cambridge National", "AS", "A-level"]
 # A paper its board page stops listing is hidden after this many days.
 UNLISTED_GRACE_DAYS = 14
 
