@@ -175,3 +175,22 @@ def test_json_listing_and_slug_names(monkeypatch):
     (seed,), _ = discover.discover(entry, {}, None)
     assert (seed["subject"], seed["level"]) == ("English Language and Literature", "A-level")
     assert seed["url"] == "https://www.eduqas.co.uk/qualifications/english-language-and-literature-asa-level/#tab_pastpapers"
+
+
+def test_discovery_falls_back_to_browser_and_reports(monkeypatch):
+    calls = []
+
+    def fake_links(url, mode, *a, **k):
+        calls.append(mode)
+        if mode == "static":
+            return [{"url": "https://www.eduqas.co.uk/home/", "text": "Home"}]
+        return [{"url": "https://eduqas.co.uk/qualifications/latin-gcse/", "text": "Latin GCSE"},
+                {"url": "https://www.eduqas.co.uk/qualifications/latin-gcse", "text": ""}]
+
+    monkeypatch.setattr(discover.harvest, "page_links", fake_links)
+    from hef.cli import load_config
+    entry = {**next(e for e in load_config()["discovery"] if e["board"] == "Eduqas"), "listings": ["L"]}
+    seeds, notes = discover.discover(entry, {}, None)
+    assert calls == ["static", "browser"]
+    assert [s["subject"] for s in seeds] == ["Latin"]  # www and non-www counted once
+    assert any("0 qualification links" in n for n in notes)

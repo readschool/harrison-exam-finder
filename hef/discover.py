@@ -78,25 +78,38 @@ def discover(entry: dict, settings: dict, session: requests.Session) -> tuple[li
     notes: list[str] = []
     pattern = re.compile(entry["link_pattern"], re.I)
     found: dict[str, dict] = {}
+    mode = entry.get("listing_mode", "static")
     for listing in entry["listings"]:
-        try:
-            links = harvest.page_links(listing, entry.get("listing_mode", "static"), settings, session)
-        except Exception as exc:  # noqa: BLE001
-            notes.append(f"{listing}: {exc}")
-            continue
-        matched = 0
-        for link in links:
-            url = urldefrag(link["url"])[0]
-            m = pattern.match(url)
-            if not m:
+        # A listing that yields nothing in plain HTML is tried again in a real
+        # browser, in case the list is drawn by JavaScript.
+        attempts = [mode] + (["browser"] if mode == "static" else [])
+        for attempt in attempts:
+            try:
+                links = harvest.page_links(listing, attempt, settings, session)
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"{listing} ({attempt}): {str(exc).splitlines()[0][:200]}")
                 continue
-            if not link["text"]:
-                link = {**link, "text": _text_from_slug(m.groupdict().get("slug") or url)}
-            matched += 1
-            # Keep the most descriptive text if a page links to it twice.
-            if url not in found or len(link["text"]) > len(found[url]["text"]):
-                found[url] = {"url": url, "text": link["text"], "groups": m.groupdict()}
-        notes.append(f"{listing}: {matched} qualification links")
+            matched = 0
+            for link in links:
+                url = urldefrag(link["url"])[0]
+                m = pattern.match(url)
+                if not m:
+                    continue
+                if not link["text"]:
+                    link = {**link, "text": _text_from_slug(m.groupdict().get("slug") or url)}
+                matched += 1
+                # The same page may be listed with and without "www." or a
+                # trailing slash; keep one, with the most descriptive text.
+                key = re.sub(r"://www\.", "://", url).rstrip("/").lower()
+                if key not in found or len(link["text"]) > len(found[key]["text"]):
+                    found[key] = {"url": url, "text": link["text"], "groups": m.groupdict()}
+            notes.append(f"{listing} ({attempt}): {len(links)} links on the page, {matched} qualification links")
+            if matched:
+                break
+            # Show a few links that didn't match, to help fix link_pattern.
+            sample = sorted({urldefrag(l["url"])[0] for l in links if "qualification" in l["url"].lower()})[:5]
+            if sample:
+                notes.append(f"  e.g. unmatched: {', '.join(sample)}")
 
     seeds = []
     for q in found.values():

@@ -14,6 +14,7 @@ nearest first), ``extra`` (other fields from API JSON) and ``source_page``.
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -77,7 +78,18 @@ SERIES_LABEL = re.compile(
     r"|(january|march|may|june|october|november|summer|autumn)( exam)?( series)?\s*[-–]?\s*20\d\d( series)?)$",
     re.I,
 )
-JSON_LINK = re.compile(r'"(?:link|url|href)"\s*:\s*"((?:https?:)?(?:\\?/)[^"\s]{3,200})"')
+def json_links(raw: str, base: str) -> list[dict]:
+    """Links held as JSON in a page, however the page has escaped them.
+
+    Handles plain JSON, JSON inside an HTML attribute (&quot;link&quot;), and
+    escaped slashes (\\/ or \\u002F).
+    """
+    text = html.unescape(raw)
+    text = re.sub(r"\\u002[fF]", "/", text).replace("\\/", "/")
+    return [{"url": urljoin(base, m.group(1)), "text": ""} for m in JSON_LINK.finditer(text)]
+
+
+JSON_LINK = re.compile(r'"(?:link|url|href|path)"\s*:\s*"((?:https?:)?/[^"\s]{2,200})"', re.I)
 HEADING_TAGS = {"h1": 1, "h2": 2, "h3": 3, "h4": 4, "h5": 5, "h6": 6}
 LABEL_LEVEL = 7  # accordion summaries, tab labels and similar
 
@@ -427,8 +439,7 @@ def page_links(url: str, mode: str, settings: dict, session: requests.Session) -
                  for a in soup.find_all("a", href=True)]
         # Some sites (WJEC/Eduqas) keep their list as JSON inside the page and
         # draw it with JavaScript: pick up "link": "/..." values too.
-        for m in JSON_LINK.finditer(resp.text):
-            links.append({"url": urljoin(resp.url, m.group(1).replace("\\/", "/")), "text": ""})
+        links += json_links(resp.text, resp.url)
         return links
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
@@ -439,10 +450,11 @@ def page_links(url: str, mode: str, settings: dict, session: requests.Session) -
                 raise HarvestError(f"HTTP {resp.status if resp else 'no response'}")
             _settle(page)
             _dismiss_cookies(page)
-            return page.evaluate(
+            links = page.evaluate(
                 "() => [...document.querySelectorAll('a[href]')].map(a => ({url: a.href, "
                 "text: (a.innerText || a.textContent || '').replace(/\\s+/g, ' ').trim()}))"
             )
+            return links + json_links(page.content(), page.url)
         finally:
             browser.close()
 

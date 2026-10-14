@@ -111,8 +111,9 @@ discovery:
   - board: Eduqas
     listings:
       - https://www.eduqas.co.uk/home/past-papers-and-mark-schemes/
+      - https://www.eduqas.co.uk/qualifications/
     listing_mode: static
-    link_pattern: '^https://www\.eduqas\.co\.uk/qualifications/(?P<slug>[a-z0-9-]+?-(?P<level>gcse|asa-level|as-level|a-level))/?$'
+    link_pattern: '^https://(?:www\.)?eduqas\.co\.uk/qualifications/(?P<slug>[a-z0-9-]+?-(?P<level>gcse|asa-level|as-level|a-level))/?$'
     levels: &wjec_levels
       gcse: GCSE
       asa-level: A-level
@@ -131,8 +132,9 @@ discovery:
   - board: WJEC
     listings:
       - https://www.wjec.co.uk/home/past-papers/
+      - https://www.wjec.co.uk/qualifications/
     listing_mode: static
-    link_pattern: '^https://www\.wjec\.co\.uk/qualifications/(?P<slug>[a-z0-9-]+?-(?P<level>gcse|asa-level|as-level|a-level))/?$'
+    link_pattern: '^https://(?:www\.)?wjec\.co\.uk/qualifications/(?P<slug>[a-z0-9-]+?-(?P<level>gcse|asa-level|as-level|a-level))/?$'
     levels: *wjec_levels
     seed_url: "{url}/#tab_pastpapers"
     seed: *wjec_seed

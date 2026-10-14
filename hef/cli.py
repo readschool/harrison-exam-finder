@@ -51,6 +51,8 @@ def all_seeds(config: dict, settings: dict, session, board: str | None) -> tuple
             continue
         seeds, notes = discover.discover(entry, settings, session)
         log.info("%s: discovered %d qualifications", entry["board"], len(seeds))
+        for note in notes:
+            log.info("  %s", note)
         discovered.extend(seeds)
         report.append({"board": entry["board"], "found": len(seeds), "notes": notes})
     manual = [s for s in config["seeds"] if _board_match(s["board"], board)]
