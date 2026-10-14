@@ -18,7 +18,7 @@ on:
         type: boolean
         default: true
       board:
-        description: "Only this board (aqa, ocr, pearson, eduqas, wjec); blank for all"
+        description: "Only these boards, separated by commas (e.g. eduqas, wjec); blank for all. Choose from aqa, ocr, pearson, eduqas, wjec"
         type: string
         default: ""
 
@@ -54,8 +54,10 @@ jobs:
             echo "check=true" >> "$GITHUB_OUTPUT"
           fi
           board="${{ inputs.board }}"
-          if [ -n "$board" ]; then
-            echo "boards=[\"$board\"]" >> "$GITHUB_OUTPUT"
+          if [ -n "$(echo "$board" | tr -d ' ,')" ]; then
+            # "eduqas, wjec" -> ["eduqas","wjec"]: one scrape job per board.
+            boards=$(echo "$board" | tr ',' '\n' | tr -d ' ' | tr '[:upper:]' '[:lower:]' | grep -v '^$' | jq -R . | jq -sc .)
+            echo "boards=$boards" >> "$GITHUB_OUTPUT"
           else
             echo 'boards=["aqa","ocr","pearson","eduqas","wjec"]' >> "$GITHUB_OUTPUT"
           fi
