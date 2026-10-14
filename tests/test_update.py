@@ -194,3 +194,44 @@ def test_discovery_falls_back_to_browser_and_reports(monkeypatch):
     assert calls == ["static", "browser"]
     assert [s["subject"] for s in seeds] == ["Latin"]  # www and non-www counted once
     assert any("0 qualification links" in n for n in notes)
+
+
+def test_wjec_eduqas_real_link_format():
+    """Link text and filenames exactly as they appeared in the first live run."""
+    gcse = {"id": "eduqas-gcse-maths", "board": "Eduqas", "level": "GCSE", "subject": "Mathematics",
+            "qualification": "Mathematics", "url": "u"}
+    alevel = {"id": "wjec-a-level-biology", "board": "WJEC", "level": "A-level", "subject": "Biology",
+              "qualification": "Biology", "url": "u"}
+    welsh = {"id": "wjec-gcse-welsh-literature", "board": "WJEC", "level": "GCSE", "subject": "Welsh Literature",
+             "qualification": "Welsh Literature", "url": "u"}
+    base = "https://www.eduqas.co.uk/media/x/"
+
+    def doc(seed, name, text, context=("Contacts", "GCSE Mathematics")):
+        return classify({"url": base + name, "text": text, "context": list(context)}, seed)
+
+    qp = doc(gcse, "A24-C300U10-1.pdf",
+             "filter_none Past Paper - Autumn - Maths Component 1 Found Noncalculato:Non-calculator Mathematics (Foundation)").doc
+    assert qp["doc_type"] == "question_paper" and qp["series"] == "November 2024" and qp["tier"] == "Foundation"
+    assert qp["component_name"] == "Component 1: Non-calculator Mathematics (C300U10-1)"
+    assert "filter_none" not in qp["title"]
+
+    ms = doc(gcse, "A24-C300UA0-1-ms.pdf",
+             "filter_none Mark Scheme - Autumn - Maths Component 1 Higher Noncalculat:Non-calculator Mathematics - Higher").doc
+    assert (ms["doc_type"], ms["tier"], ms["component"]) == ("mark_scheme", "Higher", "c300ua0-1")
+    res = doc(gcse, "A24-C300U10-1A.pdf",
+              "filter_none Past Paper - Autumn - Maths Component 1 Found Noncalculato:Non-calculator Mathematics (Foundation) [Resource]").doc
+    assert res["doc_type"] == "insert" and res["component"] == "c300u10-1"
+
+    old = doc(alevel, "z22-2407-01.pdf",
+              "filter_none Past Paper - Summer - Biology Unit 3: Written:Energy, Homeostasis and the Environment",
+              ("Contacts", "AS/A Level Biology")).doc
+    assert (old["series"], old["level"], old["component_name"]) == (
+        "June 2022", "A-level", "Unit 3: Energy, Homeostasis and the Environment (2407-01)")
+
+    # Welsh-medium copies are skipped, except for subjects taught in Welsh.
+    assert doc(gcse, "h22-C200N10-1.pdf", "filter_none Past Paper - Summer - Cymdeithaseg Cydran 1: Deall").skipped
+    kept = doc(welsh, "W25-3010N10-1.pdf",
+               "filter_none Past Paper - Winter - Llenyddiaeth Gymraeg Uned 1 Sylfaen:Barddoniaeth (Sylfaenol)").doc
+    assert kept and kept["series"] == "November 2025" and kept["tier"] == "Foundation"
+
+    assert doc(gcse, "gcse-computer-science-switch-to-eduqas.pdf", "Why choose Eduqas?").skipped

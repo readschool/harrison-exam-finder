@@ -55,8 +55,14 @@ def series(year: int, month: int) -> tuple[str, str]:
     return f"{MONTH_NAMES[month]} {year}", f"{year:04d}-{month:02d}"
 
 
+# Icon fonts (e.g. Material Icons) draw an icon from a word such as
+# "filter_none" or "picture_as_pdf", which then shows up in the link text.
+ICON_WORD = re.compile(r"(^|\s)[a-z]+(?:_[a-z]+)+(?=\s|$)")
+
+
 def clean(text: str | None) -> str:
-    return re.sub(r"\s+", " ", text or "").strip()
+    text = ICON_WORD.sub(" ", text or "")
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def filename(url: str) -> str:
@@ -76,7 +82,7 @@ _DOC_TYPE_PATTERNS = [
     ("examiner_report", r"\bexaminers?['’]? reports?\b|\breports? on the exam(ination)?\b|\bprincipal examiner"),
     ("mark_scheme", r"\bmark ?schemes?\b"),
     ("insert", r"\binserts?\b|\bsource booklet\b|\bresource booklet\b|\bpre-?release\b"),
-    ("question_paper", r"\bquestion papers?\b|\bexam(ination)? papers?\b|\bquestion booklet\b"),
+    ("question_paper", r"\bquestion papers?\b|\bexam(ination)? papers?\b|\bquestion booklet\b|\bpast papers?\b"),
 ]
 
 # Things that are published next to papers but are not part of one.
@@ -90,7 +96,7 @@ _SKIP_PATTERNS = re.compile(
     r"poster|worksheet|practical (booklet|skills|handbook)|scheme of work|"
     r"glossary|command words|checklist|mathematics in science|maths in science|"
     r"moderators?['’]? report|grade descriptor|teaching|delivery|topic test|"
-    r"knowledge organi[sz]er|walking talking|\bfaq",
+    r"knowledge organi[sz]er|walking talking|\bfaq|why choose|switch(er| to)\b",
     re.I,
 )
 
@@ -156,6 +162,8 @@ def detect_level(*texts: str) -> str | None:
     for text in texts:
         if not text:
             continue
+        if re.search(r"\bAS\s*(/|and|&)\s*A[- ]?level", text, re.I):
+            continue  # a page covering both levels says nothing about this paper
         if re.search(r"\bAS\s*(level|-level)\b|\bAS\b(?! and)", text):
             return "AS"
         if re.search(r"\bA\s*-?\s*level\b|\bA2\b", text, re.I):
