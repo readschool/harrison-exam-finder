@@ -18,7 +18,7 @@ on:
         type: boolean
         default: true
       board:
-        description: "Only this board (aqa, ocr, pearson); blank for all"
+        description: "Only this board (aqa, ocr, pearson, eduqas, wjec); blank for all"
         type: string
         default: ""
 
@@ -57,7 +57,7 @@ jobs:
           if [ -n "$board" ]; then
             echo "boards=[\"$board\"]" >> "$GITHUB_OUTPUT"
           else
-            echo 'boards=["aqa","ocr","pearson"]' >> "$GITHUB_OUTPUT"
+            echo 'boards=["aqa","ocr","pearson","eduqas","wjec"]' >> "$GITHUB_OUTPUT"
           fi
 
   scrape:
