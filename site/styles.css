@@ -304,6 +304,8 @@ main:focus { outline: none; }
 }
 .empty button { margin-left: 0; }
 .more:hover, .empty button:hover { background: var(--highlight); color: var(--on-highlight); }
+/* The display rule above would otherwise override the hidden attribute. */
+[hidden] { display: none !important; }
 
 .foot {
   max-width: 1120px;
